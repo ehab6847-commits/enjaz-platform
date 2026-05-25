@@ -1,0 +1,313 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { formatDistanceToNow } from 'date-fns';
+import { ar } from 'date-fns/locale';
+
+interface TelegramAccount {
+  id: string;
+  phone: string;
+  isActive: boolean;
+  lastSeen: string;
+  createdAt: string;
+  _count?: {
+    groups: number;
+  };
+}
+
+interface MonitoredGroup {
+  id: string;
+  groupId: string;
+  groupName: string;
+  country: string;
+  isActive: boolean;
+}
+
+export default function TelegramAccountsPage() {
+  const [accounts, setAccounts] = useState<TelegramAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
+  const [groups, setGroups] = useState<MonitoredGroup[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  
+  // Create account modal
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newPhone, setNewPhone] = useState('');
+
+  const fetchAccounts = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/accounts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAccounts(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch accounts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAccounts();
+  }, []);
+
+  const fetchGroups = async (accountId: string) => {
+    setGroupsLoading(true);
+    setSelectedAccount(accountId);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/accounts/${accountId}/groups`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGroups(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch groups:', error);
+    } finally {
+      setGroupsLoading(false);
+    }
+  };
+
+  const toggleAccountStatus = async (accountId: string, isActive: boolean) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/accounts/${accountId}/toggle`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ isActive: !isActive })
+      });
+      fetchAccounts();
+    } catch (error) {
+      console.error('Error toggling account:', error);
+    }
+  };
+
+  const handleAddAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/accounts`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ phone: newPhone })
+      });
+      
+      if (res.ok) {
+        setNewPhone('');
+        setShowAddModal(false);
+        fetchAccounts();
+        alert('تمت إضافة الحساب! يرجى تشغيل سكريبت create-session.js في الخادم لربط الحساب فعلياً.');
+      } else {
+        const err = await res.json();
+        alert(err.error || 'حدث خطأ');
+      }
+    } catch (error) {
+      console.error('Error adding account:', error);
+    }
+  };
+
+  const handleDeleteAccount = async (id: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذا الحساب؟ سيتم إيقاف المراقبة وحذف جميع الجروبات المرتبطة به.')) return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/accounts/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchAccounts();
+      if (selectedAccount === id) setSelectedAccount(null);
+    } catch (error) {
+      console.error('Error deleting account:', error);
+    }
+  };
+
+  return (
+    <div className="space-y-6" dir="rtl">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">حسابات تيليجرام</h1>
+          <p className="text-slate-400 text-sm mt-1">إدارة الحسابات المربوطة لمراقبة الجروبات</p>
+        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-4 py-2 text-sm transition-all"
+        >
+          + إضافة حساب جديد
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Accounts List */}
+        <div className="lg:col-span-1 space-y-4">
+          {loading ? (
+             <div className="flex justify-center py-12 bg-[#1E293B] rounded-2xl border border-white/5">
+               <div className="w-8 h-8 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+             </div>
+          ) : accounts.length === 0 ? (
+            <div className="bg-[#1E293B] rounded-2xl border border-white/5 p-8 text-center text-slate-400">
+              لا توجد حسابات مضافة
+            </div>
+          ) : (
+            accounts.map(acc => (
+              <div 
+                key={acc.id}
+                onClick={() => fetchGroups(acc.id)}
+                className={`bg-[#1E293B] rounded-2xl border p-4 cursor-pointer transition-all ${
+                  selectedAccount === acc.id 
+                    ? 'border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]' 
+                    : 'border-white/5 hover:border-white/10'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xl border border-blue-500/30">
+                      📱
+                    </div>
+                    <div dir="ltr" className="text-left">
+                      <h3 className="text-white font-medium text-right">{acc.phone}</h3>
+                      <p className="text-slate-400 text-xs text-right">
+                        {acc.lastSeen ? `آخر ظهور: ${formatDistanceToNow(new Date(acc.lastSeen), { locale: ar, addSuffix: true })}` : 'لم يتصل بعد'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`px-2 py-1 rounded-lg text-xs border ${
+                    acc.isActive 
+                      ? 'bg-green-500/20 text-green-400 border-green-500/30' 
+                      : 'bg-red-500/20 text-red-400 border-red-500/30'
+                  }`}>
+                    {acc.isActive ? 'نشط' : 'متوقف'}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/5">
+                  <span className="text-slate-400 text-sm">
+                    {acc._count?.groups || 0} مجموعات
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleAccountStatus(acc.id, acc.isActive); }}
+                      className="px-3 py-1 bg-[#0F172A] hover:bg-white/5 rounded-lg text-slate-300 text-xs border border-white/10 transition-colors"
+                    >
+                      {acc.isActive ? 'إيقاف' : 'تفعيل'}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteAccount(acc.id); }}
+                      className="px-3 py-1 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-400 text-xs border border-red-500/20 transition-colors"
+                    >
+                      حذف
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Groups Details */}
+        <div className="lg:col-span-2">
+          {!selectedAccount ? (
+             <div className="bg-[#1E293B] rounded-2xl border border-white/5 h-full min-h-[300px] flex items-center justify-center text-slate-500">
+               اختر حساباً لعرض المجموعات المرتبطة به
+             </div>
+          ) : (
+            <div className="bg-[#1E293B] rounded-2xl border border-white/5 overflow-hidden flex flex-col h-full min-h-[500px]">
+              <div className="p-4 border-b border-white/5 bg-[#0F172A]/50 flex items-center justify-between">
+                <h2 className="text-white font-medium">المجموعات المراقبة</h2>
+                <span className="text-slate-400 text-sm">{groups.length} مجموعات</span>
+              </div>
+              
+              <div className="p-4 flex-1 overflow-y-auto">
+                {groupsLoading ? (
+                  <div className="flex justify-center py-12">
+                    <div className="w-8 h-8 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+                  </div>
+                ) : groups.length === 0 ? (
+                  <div className="text-center py-12 text-slate-500">
+                    لا توجد مجموعات مسجلة لهذا الحساب. سيتم إضافة المجموعات تلقائياً عند قراءة الرسائل.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {groups.map(group => (
+                      <div key={group.id} className="bg-[#0F172A] rounded-xl p-4 border border-white/5">
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="text-white font-medium line-clamp-1">{group.groupName || 'مجموعة بدون اسم'}</h4>
+                          <span className={`px-2 py-0.5 rounded text-xs border ${
+                            group.isActive 
+                              ? 'bg-green-500/10 text-green-400 border-green-500/20' 
+                              : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                          }`}>
+                            {group.isActive ? 'مفعل' : 'معطل'}
+                          </span>
+                        </div>
+                        <p className="text-slate-500 text-xs font-mono mb-3" dir="ltr">{group.groupId}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400 text-sm">{group.country || 'دولة غير محددة'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Add Account Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowAddModal(false)} />
+          <div className="relative bg-[#1E293B] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-2">إضافة حساب تيليجرام</h3>
+            <p className="text-slate-400 text-sm mb-6">
+              أدخل رقم الهاتف مع رمز الدولة. بعد الإضافة، يجب عليك تشغيل أداة إنشاء الجلسة في الخادم وتأكيد رمز الدخول.
+            </p>
+            
+            <form onSubmit={handleAddAccount} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">رقم الهاتف</label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  placeholder="+966xxxxxxxxx"
+                  value={newPhone}
+                  onChange={e => setNewPhone(e.target.value)}
+                  className="w-full bg-[#0F172A] border border-white/10 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-left"
+                  required
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 px-4 py-2 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 transition-colors"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                >
+                  إضافة الحساب
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

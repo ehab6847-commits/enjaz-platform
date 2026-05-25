@@ -1,0 +1,51 @@
+# Git ignore file for Enjaz Platform
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Dependencies
+node_modules/
+.npm
+
+# Build outputs
+.next/
+dist/
+build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Telegram sessions (sensitive!)
+backend/sessions/
+*.session
+*.session-journal
+
+# Database
+*.db
+*.sqlite
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Prisma
+backend/prisma/migrations/
+
+# Test files
+coverage/
+.nyc_output/
+
+# Docker volumes
+postgres_data/
+redis_data/

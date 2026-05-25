@@ -1,0 +1,167 @@
+// This is your Prisma schema file
+// Learn more about it at https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  SPECIALIST
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  BLOCKED
+}
+
+enum RequestStatus {
+  NEW
+  VIEWED
+  ASSIGNED
+  ARCHIVED
+}
+
+enum Priority {
+  URGENT
+  NORMAL
+  LOW
+}
+
+enum NotificationType {
+  NEW_REQUEST
+  USER_JOINED
+  SYSTEM
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id               String    @id @default(cuid())
+  username         String    @unique
+  email            String    @unique
+  passwordHash     String
+  role             UserRole  @default(SPECIALIST)
+  status           UserStatus @default(PENDING)
+  fullName         String?
+  specialization   String?
+  whatsapp         String?
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  notifications    Notification[]
+  activityLogs     ActivityLog[]
+
+  @@map("users")
+}
+
+model Request {
+  id              String        @id @default(cuid())
+  messageText     String
+  senderName      String?
+  senderUsername  String?
+  senderId        String
+  profileLink     String?
+  messageLink     String?
+  groupName       String?
+  groupId         String
+  country         String?
+  university      String?
+  serviceType     String?
+  confidenceScore Float         @default(0)
+  keywords        String[]
+  status          RequestStatus @default(NEW)
+  priority        Priority      @default(NORMAL)
+  isAdvertiser    Boolean       @default(false)
+  capturedAt      DateTime      @default(now())
+  expiresAt       DateTime
+  archivedAt      DateTime?
+  accountPhone    String?
+
+  notifications   Notification[]
+
+  @@map("requests")
+  @@index([status])
+  @@index([country])
+  @@index([serviceType])
+  @@index([capturedAt])
+  @@index([expiresAt])
+}
+
+model TelegramAccount {
+  id            String   @id @default(cuid())
+  phone         String   @unique
+  sessionString String?  @db.Text
+  isActive      Boolean  @default(false)
+  lastSeen      DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  groups        MonitoredGroup[]
+
+  @@map("telegram_accounts")
+}
+
+model MonitoredGroup {
+  id        String   @id @default(cuid())
+  accountId String
+  groupId   String
+  groupName String?
+  country   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  account   TelegramAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, groupId])
+  @@map("monitored_groups")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String?
+  requestId String?
+  type      NotificationType @default(NEW_REQUEST)
+  message   String
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  request   Request? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+  @@index([userId, isRead])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  details   String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  user      User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("activity_logs")
+  @@index([createdAt])
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
