@@ -13,28 +13,29 @@
     "db:seed": "node src/utils/seed.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
     "@prisma/client": "^5.7.0",
     "bcryptjs": "^2.4.3",
+    "big-integer": "^1.6.51",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "input": "^1.0.1",
     "jsonwebtoken": "^9.0.2",
-    "speakeasy": "^2.0.0",
+    "morgan": "^1.10.0",
+    "node-cron": "^3.0.3",
+    "openai": "^4.24.0",
     "qrcode": "^1.5.3",
     "socket.io": "^4.6.1",
-    "cors": "^2.8.5",
-    "helmet": "^7.1.0",
-    "express-rate-limit": "^7.1.5",
-    "zod": "^3.22.4",
-    "openai": "^4.24.0",
-    "node-cron": "^3.0.3",
-    "dotenv": "^16.3.1",
-    "winston": "^3.11.0",
-    "morgan": "^1.10.0",
+    "speakeasy": "^2.0.0",
     "telegram": "^2.19.8",
-    "big-integer": "^1.6.51",
-    "input": "^1.0.1"
+    "winston": "^3.11.0",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "nodemon": "^3.0.2",
-    "prisma": "^5.7.0"
+    "prisma": "^5.22.0"
   }
 }
