@@ -10,7 +10,7 @@ const path = require('path');
 
 const logger = require('./config/logger');
 const { initSocket } = require('./utils/socket');
-const { generalLimiter } = require('./middleware/rateLimiter');
+const { apiLimiter } = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/errorHandler');
 
 // Routes
@@ -58,7 +58,7 @@ app.use(morgan('combined', {
 }));
 
 // Rate limiting
-app.use('/api', generalLimiter);
+app.use('/api', apiLimiter);
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
