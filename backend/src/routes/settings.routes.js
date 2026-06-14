@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const prisma = require('../config/database');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticate, requireAdmin } = require('../middleware/auth');
 
 // Get all settings (admin only)
-router.get('/', authenticateToken, requireAdmin, async (req, res, next) => {
+router.get('/', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const settings = await prisma.systemSetting.findMany();
     const settingsMap = Object.fromEntries(settings.map(s => [s.key, s.value]));
@@ -15,7 +15,7 @@ router.get('/', authenticateToken, requireAdmin, async (req, res, next) => {
 });
 
 // Update a setting (admin only)
-router.put('/:key', authenticateToken, requireAdmin, async (req, res, next) => {
+router.put('/:key', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const { key } = req.params;
     const { value } = req.body;
@@ -37,7 +37,7 @@ router.put('/:key', authenticateToken, requireAdmin, async (req, res, next) => {
 });
 
 // Update multiple settings at once
-router.put('/', authenticateToken, requireAdmin, async (req, res, next) => {
+router.put('/', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const updates = req.body;
     const results = [];
