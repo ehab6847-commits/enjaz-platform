@@ -2,6 +2,7 @@
 services:
   - type: web
     name: enjaz-backend
+    plan: free
     runtime: node
     rootDir: backend
     buildCommand: npm install && npx prisma generate
