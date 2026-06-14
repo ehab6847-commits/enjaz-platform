@@ -1,0 +1,53 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║          Enjaz Platform - Render.com Setup Guide             ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+# ─── الخطوة 1: إنشاء قاعدة بيانات PostgreSQL ───────────────────
+# اذهب لـ: https://supabase.com/dashboard/projects
+# 1. New Project → اسم: enjaz-db
+# 2. بعد الإنشاء: Settings → Database → Connection String → URI
+# 3. انسخ الرابط (يبدأ بـ postgresql://)
+
+# ─── الخطوة 2: رفع Backend على Render ──────────────────────────
+# اذهب لـ: https://render.com/
+# 1. New → Web Service
+# 2. اختر: "Deploy an existing image or public repository"
+#    أو: "Build and deploy from a Git repository"
+# 3. إذا بدون GitHub، اختر "Public Git repository" وضع هذا الرابط:
+#    https://github.com/ehab6847/enjaz-platform
+#    (بعد رفع الكود على GitHub)
+
+# ─── إعدادات الـ Web Service على Render ────────────────────────
+Name: enjaz-backend
+Root Directory: backend
+Runtime: Node
+Build Command: npm install
+Start Command: node src/index.js
+Instance Type: Free
+
+# ─── متغيرات البيئة المطلوبة على Render ────────────────────────
+NODE_ENV=production
+PORT=5000
+DATABASE_URL=<رابط Supabase>
+JWT_SECRET=<كلمة سر عشوائية قوية 32+ حرف>
+JWT_REFRESH_SECRET=<كلمة سر عشوائية قوية 32+ حرف>
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+OPENAI_API_KEY=<مفتاح OpenAI>
+TELEGRAM_API_ID=<من my.telegram.org>
+TELEGRAM_API_HASH=<من my.telegram.org>
+TELEGRAM_BOT_TOKEN=<توكن بوت التليجرام - اختياري>
+ADMIN_TELEGRAM_ID=<معرفك على التليجرام>
+FRONTEND_URL=<رابط Vercel بعد الرفع>
+LOG_LEVEL=info
+
+# ─── بعد رفع الـ Backend ────────────────────────────────────────
+# 1. افتح Render Shell أو شغّل الأمر في Environment:
+#    node src/utils/setup-prod.js
+#    (هذا سيُنشئ جداول DB ويُضيف المدير)
+
+# ─── إعداد UptimeRobot لإبقاء البوت نشطاً ─────────────────────
+# اذهب لـ: https://uptimerobot.com/
+# New Monitor → HTTP(s)
+# URL: https://enjaz-backend.onrender.com/api/health
+# Every: 5 minutes
