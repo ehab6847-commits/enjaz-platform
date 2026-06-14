@@ -12,27 +12,25 @@ services:
       - key: PORT
         value: 5000
       - key: DATABASE_URL
-        sync: false
+        value: postgresql://postgres:N7%23vQ9%21mZ4%40xL2%24Rp8%5ETq6@db.lxnlsfubhfzflkkwaams.supabase.co:5432/postgres
       - key: JWT_SECRET
-        generateValue: true
+        value: enjaz-platform-super-secret-jwt-key-2024-very-secure-prod
       - key: JWT_REFRESH_SECRET
-        generateValue: true
+        value: enjaz-platform-refresh-secret-2024-very-secure-production
       - key: JWT_EXPIRES_IN
         value: 15m
       - key: JWT_REFRESH_EXPIRES_IN
         value: 7d
-      - key: OPENAI_API_KEY
-        sync: false
       - key: TELEGRAM_API_ID
-        sync: false
+        value: "32224708"
       - key: TELEGRAM_API_HASH
-        sync: false
+        value: 10087816c10fb7b458b95ad572cd8530
       - key: TELEGRAM_BOT_TOKEN
-        sync: false
+        value: 8902043592:AAFVWo8dLmBREGsXR-9MwBw3eFXK8huDFgI
       - key: ADMIN_TELEGRAM_ID
-        sync: false
+        value: "743695427"
       - key: FRONTEND_URL
-        sync: false
+        value: https://enjaz-platform.vercel.app
       - key: LOG_LEVEL
         value: info
     healthCheckPath: /api/health
