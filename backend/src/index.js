@@ -70,6 +70,14 @@ app.get('/api/health', async (req, res) => {
   const match = dbUrl.match(/@([^:/]+)/);
   health.dbHost = match ? match[1] : 'unknown';
 
+  try {
+    const dns = require('dns').promises;
+    const ips = await dns.resolve(health.dbHost);
+    health.dnsResolve = ips;
+  } catch (dnsErr) {
+    health.dnsResolve = 'failed: ' + dnsErr.message;
+  }
+
   // Try to check DB but don't fail if it's not available
   try {
     const db = require('./config/database');
