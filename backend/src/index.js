@@ -128,6 +128,11 @@ const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, async () => {
   logger.info(`🚀 Enjaz Backend running on port ${PORT}`);
   logger.info(`📡 Environment: ${process.env.NODE_ENV}`);
+  
+  const dbUrl = process.env.DATABASE_URL || '';
+  const match = dbUrl.match(/@([^:/]+)/);
+  logger.info(`📡 Database Host in Env: ${match ? match[1] : 'unknown'}`);
+
 
   // Test database connection (don't crash if it fails)
   const db = require('./config/database');
