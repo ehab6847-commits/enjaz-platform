@@ -4,16 +4,15 @@ const rateLimit = require('express-rate-limit');
 const logger = require('../config/logger');
 
 // ─── Custom Handler ────────────────────────────────────────────────────────────
-const rateLimitHandler = (req, res, options) => {
+const rateLimitHandler = (req, res, next) => {
   logger.warn('Rate limit exceeded', {
     ip: req.ip,
     url: req.originalUrl,
     method: req.method,
   });
-  res.status(options.statusCode).json({
+  res.status(429).json({
     success: false,
-    message: options.message,
-    retryAfter: Math.ceil(options.windowMs / 1000 / 60),
+    message: 'Too many requests, please try again later.',
   });
 };
 

@@ -57,10 +57,7 @@ app.use(morgan('combined', {
   stream: { write: (message) => logger.http(message.trim()) },
 }));
 
-// Rate limiting
-app.use('/api', apiLimiter);
-
-// ─── Routes ───────────────────────────────────────────────────────────────────
+// ─── Unrestricted Routes (Health & Diagnostics) ───────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -108,6 +105,9 @@ app.get('/api/test-regions', async (req, res) => {
   
   res.json({ results, found });
 });
+
+// Rate limiting
+app.use('/api', apiLimiter);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/requests', requestRoutes);
