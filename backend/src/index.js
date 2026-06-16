@@ -58,50 +58,25 @@ app.use(morgan('combined', {
 }));
 
 // ─── Unrestricted Routes (Health & Diagnostics) ───────────────────────────────
-app.get('/api/health', (req, res) => {
-  res.json({
+app.get('/api/health', async (req, res) => {
+  const health = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
-  });
-});
+    uptime: process.uptime(),
+  };
 
-app.get('/api/test-regions', async (req, res) => {
-  const { PrismaClient } = require('@prisma/client');
-  const regions = [
-    'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2', 'ca-central-1',
-    'eu-central-1', 'eu-west-1', 'eu-west-2', 'eu-west-3', 'eu-north-1',
-    'ap-northeast-1', 'ap-northeast-2', 'ap-south-1', 'ap-southeast-1', 'ap-southeast-2',
-    'sa-east-1', 'me-central-1'
-  ];
-  
-  const promises = regions.map(async (region) => {
-    const url = `postgresql://postgres.lxnlsfubhfzflkkwaams:N7%23vQ9%21mZ4%40xL2%24Rp8%5ETq6@aws-0-${region}.pooler.supabase.com:6543/postgres?pgbouncer=true`;
-    const prisma = new PrismaClient({
-      datasources: {
-        db: {
-          url: url
-        }
-      }
-    });
-    
-    try {
-      await Promise.race([
-        prisma.$queryRaw`SELECT 1 as result`,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
-      ]);
-      await prisma.$disconnect();
-      return { region, status: 'SUCCESS', url };
-    } catch (err) {
-      await prisma.$disconnect();
-      return { region, status: 'FAILED', error: err.message.split('\n')[0] };
-    }
-  });
-  
-  const results = await Promise.all(promises);
-  const found = results.find(r => r.status === 'SUCCESS')?.url || null;
-  
-  res.json({ results, found });
+  // Try to check DB but don't fail if it's not available
+  try {
+    const db = require('./config/database');
+    await db.$queryRawUnsafe('SELECT 1');
+    health.database = 'connected';
+  } catch (e) {
+    health.database = 'disconnected';
+    health.dbError = e.message ? e.message.substring(0, 100) : 'unknown';
+  }
+
+  res.status(200).json(health);
 });
 
 // Rate limiting
@@ -154,19 +129,36 @@ httpServer.listen(PORT, async () => {
   logger.info(`🚀 Enjaz Backend running on port ${PORT}`);
   logger.info(`📡 Environment: ${process.env.NODE_ENV}`);
 
-  // Initialize Cron Jobs
-  initCronJobs();
-  logger.info('⏰ Cron jobs initialized');
+  // Test database connection (don't crash if it fails)
+  const db = require('./config/database');
+  const dbConnected = await db.testConnection();
 
-  // Start Telegram Listeners (with delay to let server stabilize)
-  setTimeout(async () => {
-    try {
-      await startAllListeners();
-      logger.info('📱 Telegram listeners started');
-    } catch (error) {
-      logger.error('Failed to start Telegram listeners:', error);
-    }
-  }, 3000);
+  if (!dbConnected) {
+    logger.warn('⚠️ Server started WITHOUT database connection. Some features may not work.');
+    logger.warn('⚠️ Database will be retried when requests come in.');
+  }
+
+  // Initialize Cron Jobs (only if DB is connected)
+  if (dbConnected) {
+    initCronJobs();
+    logger.info('⏰ Cron jobs initialized');
+  } else {
+    logger.warn('⏰ Cron jobs skipped (no database connection)');
+  }
+
+  // Start Telegram Listeners (with delay, only if DB is connected)
+  if (dbConnected) {
+    setTimeout(async () => {
+      try {
+        await startAllListeners();
+        logger.info('📱 Telegram listeners started');
+      } catch (error) {
+        logger.error('Failed to start Telegram listeners:', error.message || error);
+      }
+    }, 3000);
+  } else {
+    logger.warn('📱 Telegram listeners skipped (no database connection)');
+  }
 });
 
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────
@@ -184,7 +176,7 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  logger.error('Unhandled Rejection at:', { reason: reason instanceof Error ? reason.message : String(reason) });
 });
 
 module.exports = { app, io };
