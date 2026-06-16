@@ -13,7 +13,7 @@
     "db:seed": "node src/utils/seed.js"
   },
   "dependencies": {
-    "@prisma/client": "^5.7.0",
+    "@prisma/client": "5.22.0",
     "bcryptjs": "^2.4.3",
     "big-integer": "^1.6.51",
     "compression": "^1.8.1",
@@ -27,7 +27,7 @@
     "morgan": "^1.10.0",
     "node-cron": "^3.0.3",
     "openai": "^4.24.0",
-    "prisma": "^5.22.0",
+    "prisma": "5.22.0",
     "qrcode": "^1.5.3",
     "socket.io": "^4.6.1",
     "speakeasy": "^2.0.0",
