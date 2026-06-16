@@ -85,7 +85,12 @@ app.get('/api/health', async (req, res) => {
     health.database = 'connected';
   } catch (e) {
     health.database = 'disconnected';
-    health.dbError = e.message ? e.message.substring(0, 100) : 'unknown';
+    health.dbError = {
+      message: e.message,
+      code: e.code,
+      meta: e.meta,
+      stack: e.stack
+    };
   }
 
   res.status(200).json(health);
