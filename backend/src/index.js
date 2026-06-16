@@ -69,6 +69,46 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.get('/api/test-regions', async (req, res) => {
+  const { PrismaClient } = require('@prisma/client');
+  const regions = [
+    'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2', 'ca-central-1',
+    'eu-central-1', 'eu-west-1', 'eu-west-2', 'eu-west-3', 'eu-north-1',
+    'ap-northeast-1', 'ap-northeast-2', 'ap-south-1', 'ap-southeast-1', 'ap-southeast-2',
+    'sa-east-1', 'me-central-1'
+  ];
+  
+  const results = [];
+  let found = null;
+  
+  for (const region of regions) {
+    const url = `postgresql://postgres.lxnlsfubhfzflkkwaams:N7%23vQ9%21mZ4%40xL2%24Rp8%5ETq6@aws-0-${region}.pooler.supabase.com:6543/postgres?pgbouncer=true`;
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: url
+        }
+      }
+    });
+    
+    try {
+      const result = await Promise.race([
+        prisma.$queryRaw`SELECT 1 as result`,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+      ]);
+      results.push({ region, status: 'SUCCESS' });
+      found = url;
+      await prisma.$disconnect();
+      break;
+    } catch (err) {
+      results.push({ region, status: 'FAILED', error: err.message.split('\n')[0] });
+      await prisma.$disconnect();
+    }
+  }
+  
+  res.json({ results, found });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/requests', requestRoutes);
 app.use('/api/telegram', telegramRoutes);
