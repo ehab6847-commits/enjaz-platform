@@ -66,6 +66,10 @@ app.get('/api/health', async (req, res) => {
     uptime: process.uptime(),
   };
 
+  const dbUrl = process.env.DATABASE_URL || '';
+  const match = dbUrl.match(/@([^:/]+)/);
+  health.dbHost = match ? match[1] : 'unknown';
+
   // Try to check DB but don't fail if it's not available
   try {
     const db = require('./config/database');
