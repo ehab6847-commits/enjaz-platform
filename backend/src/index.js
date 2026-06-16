@@ -75,10 +75,7 @@ app.get('/api/test-regions', async (req, res) => {
     'sa-east-1', 'me-central-1'
   ];
   
-  const results = [];
-  let found = null;
-  
-  for (const region of regions) {
+  const promises = regions.map(async (region) => {
     const url = `postgresql://postgres.lxnlsfubhfzflkkwaams:N7%23vQ9%21mZ4%40xL2%24Rp8%5ETq6@aws-0-${region}.pooler.supabase.com:6543/postgres?pgbouncer=true`;
     const prisma = new PrismaClient({
       datasources: {
@@ -89,19 +86,20 @@ app.get('/api/test-regions', async (req, res) => {
     });
     
     try {
-      const result = await Promise.race([
+      await Promise.race([
         prisma.$queryRaw`SELECT 1 as result`,
         new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
       ]);
-      results.push({ region, status: 'SUCCESS' });
-      found = url;
       await prisma.$disconnect();
-      break;
+      return { region, status: 'SUCCESS', url };
     } catch (err) {
-      results.push({ region, status: 'FAILED', error: err.message.split('\n')[0] });
       await prisma.$disconnect();
+      return { region, status: 'FAILED', error: err.message.split('\n')[0] };
     }
-  }
+  });
+  
+  const results = await Promise.all(promises);
+  const found = results.find(r => r.status === 'SUCCESS')?.url || null;
   
   res.json({ results, found });
 });
