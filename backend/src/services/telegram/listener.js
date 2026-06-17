@@ -9,7 +9,7 @@ const db = require('../../config/database');
 const logger = require('../../config/logger');
 const { classifyMessage } = require('../ai/classifier');
 const { createNotification } = require('../notifications/notifier');
-const { emitToRoom } = require('../../utils/socket');
+const { emitToAdmins } = require('../../utils/socket');
 
 // ─── Active Clients Registry ───────────────────────────────────────────────────
 /** @type {Map<string, TelegramClient>} accountId -> TelegramClient */
@@ -224,7 +224,7 @@ const handleNewMessage = async (event, account, client) => {
     });
 
     // Emit real-time event to all connected admin clients
-    emitToRoom('admin', 'new_request', {
+    emitToAdmins('new_request', {
       request,
       classification,
     });
