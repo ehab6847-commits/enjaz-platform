@@ -2,7 +2,7 @@
 
 const db = require('../../config/database');
 const logger = require('../../config/logger');
-const { emitToRoom } = require('../../utils/socket');
+const { emitToUser, emitToAdmins } = require('../../utils/socket');
 
 // ─── Telegram Bot Sender (optional) ──────────────────────────────────────────
 /**
@@ -65,11 +65,11 @@ const createNotification = async ({ userId, requestId = null, type, message }) =
     });
 
     // Emit to user's personal room
-    emitToRoom(`user:${userId}`, 'notification', notification);
+    emitToUser(userId, 'notification', notification);
 
     // If it's a NEW_REQUEST, also emit to admin room
     if (type === 'NEW_REQUEST') {
-      emitToRoom('admin', 'notification', notification);
+      emitToAdmins('notification', notification);
 
       // Send Telegram message to admin
       await sendTelegramAdminMessage(
