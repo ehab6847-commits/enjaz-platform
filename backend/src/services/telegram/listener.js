@@ -111,6 +111,25 @@ const handleNewMessage = async (event, account, client) => {
     const groupId = String(message.chatId || '');
     if (!groupId) return;
 
+    // Prevent loop: check template format
+    if (messageText.includes('طلب جديد مقتنص') || messageText.includes('روابط سريعة:')) {
+      return;
+    }
+
+    // Prevent loop: check if forwarding channel
+    const setting = await db.systemSetting.findUnique({
+      where: { key: 'FORWARD_CHANNEL_ID' }
+    });
+    const forwardChannelId = setting ? setting.value : process.env.FORWARD_CHANNEL_ID;
+
+    if (forwardChannelId) {
+      const normGroupId = groupId.replace('-100', '');
+      const normForwardId = String(forwardChannelId).replace('-100', '');
+      if (normGroupId === normForwardId) {
+        return;
+      }
+    }
+
     logger.info(`Incoming msg from ${account.phone} (chat ${groupId}): "${messageText.substring(0, 50)}..."`);
 
     // Check if this group is in our monitored list in DB first (no Telegram API call)
@@ -306,12 +325,27 @@ const createClientForAccount = async (account) => {
     (async () => {
       try {
         logger.info(`🔍 Scanning joined groups for account: ${account.phone}...`);
+        
+        const setting = await db.systemSetting.findUnique({
+          where: { key: 'FORWARD_CHANNEL_ID' }
+        });
+        const forwardChannelId = setting ? setting.value : process.env.FORWARD_CHANNEL_ID;
+
         const dialogs = await client.getDialogs();
         let addedCount = 0;
         for (const dialog of dialogs) {
           if (dialog.isGroup || dialog.isChannel) {
             const groupId = String(dialog.id);
             const groupName = dialog.title || 'Unknown Group';
+
+            // Skip if it's the forwarding channel
+            if (forwardChannelId) {
+              const normGroupId = groupId.replace('-100', '');
+              const normForwardId = String(forwardChannelId).replace('-100', '');
+              if (normGroupId === normForwardId) {
+                continue;
+              }
+            }
 
             // Check if already exists in DB
             const existing = await db.monitoredGroup.findFirst({
