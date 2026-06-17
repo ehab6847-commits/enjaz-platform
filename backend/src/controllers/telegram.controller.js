@@ -19,8 +19,8 @@ const listAccounts = async (req, res, next) => {
   try {
     const accounts = await db.telegramAccount.findMany({
       include: {
-        _count: { select: { monitoredGroups: true } },
-        monitoredGroups: {
+        _count: { select: { groups: true } },
+        groups: {
           where: { isActive: true },
           select: { id: true, groupName: true, country: true },
         },
@@ -115,14 +115,14 @@ const getAccountGroups = async (req, res, next) => {
 
     const account = await db.telegramAccount.findUnique({
       where: { id },
-      include: { monitoredGroups: { orderBy: { createdAt: 'desc' } } },
+      include: { groups: { orderBy: { createdAt: 'desc' } } },
     });
 
     if (!account) {
       return res.status(404).json({ success: false, message: 'Telegram account not found.' });
     }
 
-    return res.status(200).json({ success: true, data: account.monitoredGroups });
+    return res.status(200).json({ success: true, data: account.groups });
   } catch (err) {
     next(err);
   }
