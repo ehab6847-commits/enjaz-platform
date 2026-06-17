@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import api from '@/lib/api';
 
 interface TelegramAccount {
   id: string;
@@ -42,14 +43,8 @@ export default function TelegramAccountsPage() {
 
   const fetchAccounts = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/accounts`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAccounts(data.data || []);
-      }
+      const res = await api.get('/telegram/accounts');
+      setAccounts(res.data.data || []);
     } catch (error) {
       console.error('Failed to fetch accounts:', error);
     } finally {
@@ -65,14 +60,8 @@ export default function TelegramAccountsPage() {
     setGroupsLoading(true);
     setSelectedAccount(accountId);
     try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/accounts/${accountId}/groups`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setGroups(data.data || []);
-      }
+      const res = await api.get(`/telegram/accounts/${accountId}/groups`);
+      setGroups(res.data.data || []);
     } catch (error) {
       console.error('Failed to fetch groups:', error);
     } finally {
@@ -82,15 +71,7 @@ export default function TelegramAccountsPage() {
 
   const toggleAccountStatus = async (accountId: string, isActive: boolean) => {
     try {
-      const token = localStorage.getItem('accessToken');
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/accounts/${accountId}/toggle`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}` 
-        },
-        body: JSON.stringify({ isActive: !isActive })
-      });
+      await api.post(`/telegram/accounts/${accountId}/toggle`, { isActive: !isActive });
       fetchAccounts();
     } catch (error) {
       console.error('Error toggling account:', error);
@@ -112,25 +93,16 @@ export default function TelegramAccountsPage() {
     setSubmitting(true);
     setModalError(null);
     try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/login/send-code`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}` 
-        },
-        body: JSON.stringify({ phone: newPhone })
-      });
-      
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.post('/telegram/login/send-code', { phone: newPhone });
+      if (res.data && res.data.success) {
         setStep('otp');
       } else {
-        setModalError(data.message || 'فشل إرسال رمز التحقق. تأكد من الرقم وصيغته.');
+        setModalError(res.data?.message || 'فشل إرسال رمز التحقق. تأكد من الرقم وصيغته.');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending code:', error);
-      setModalError('حدث خطأ في الاتصال بالسيرفر.');
+      const errMsg = error.response?.data?.message || 'حدث خطأ في الاتصال بالسيرفر.';
+      setModalError(errMsg);
     } finally {
       setSubmitting(false);
     }
@@ -141,34 +113,22 @@ export default function TelegramAccountsPage() {
     setSubmitting(true);
     setModalError(null);
     try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/login/verify-code`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}` 
-        },
-        body: JSON.stringify({ phone: newPhone, code: otp, password })
-      });
-      
-      const data = await res.json();
-      if (res.ok) {
-        if (data.requiresPassword) {
-          setRequiresPassword(true);
-          setModalError('الحساب محمي بالتحقق بخطوتين. يرجى إدخال كلمة المرور.');
-        } else if (data.success) {
-          handleCloseModal();
-          fetchAccounts();
-          alert('تم ربط الحساب وتفعيل البوت بنجاح! 🎉');
-        } else {
-          setModalError(data.message || 'رمز التحقق غير صحيح.');
-        }
+      const res = await api.post('/telegram/login/verify-code', { phone: newPhone, code: otp, password });
+      const data = res.data;
+      if (data.requiresPassword) {
+        setRequiresPassword(true);
+        setModalError('الحساب محمي بالتحقق بخطوتين. يرجى إدخال كلمة المرور.');
+      } else if (data.success) {
+        handleCloseModal();
+        fetchAccounts();
+        alert('تم ربط الحساب وتفعيل البوت بنجاح! 🎉');
       } else {
-        setModalError(data.message || 'فشل التحقق من الرمز.');
+        setModalError(data.message || 'رمز التحقق غير صحيح.');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error verifying code:', error);
-      setModalError('حدث خطأ في الاتصال بالسيرفر.');
+      const errMsg = error.response?.data?.message || 'حدث خطأ في الاتصال بالسيرفر.';
+      setModalError(errMsg);
     } finally {
       setSubmitting(false);
     }
@@ -177,11 +137,7 @@ export default function TelegramAccountsPage() {
   const handleDeleteAccount = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذا الحساب؟ سيتم إيقاف المراقبة وحذف جميع الجروبات المرتبطة به.')) return;
     try {
-      const token = localStorage.getItem('accessToken');
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/accounts/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/telegram/accounts/${id}`);
       fetchAccounts();
       if (selectedAccount === id) setSelectedAccount(null);
     } catch (error) {
