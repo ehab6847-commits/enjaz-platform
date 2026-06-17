@@ -42,12 +42,19 @@ const logActivity = async (userId, action, details = {}, ip = null) => {
  */
 const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { username, password } = req.body;
 
-    const user = await db.user.findUnique({ where: { email } });
+    const user = await db.user.findFirst({
+      where: {
+        OR: [
+          { email: username },
+          { username: username },
+        ],
+      },
+    });
 
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+      return res.status(401).json({ success: false, message: 'Invalid username/email or password.' });
     }
 
     if (user.status === 'BLOCKED') {
@@ -63,8 +70,8 @@ const login = async (req, res, next) => {
 
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) {
-      await logActivity(user.id, 'LOGIN_FAILED', { email }, req.ip);
-      return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+      await logActivity(user.id, 'LOGIN_FAILED', { username }, req.ip);
+      return res.status(401).json({ success: false, message: 'Invalid username/email or password.' });
     }
 
     // If 2FA is enabled, require TOTP before issuing full tokens
