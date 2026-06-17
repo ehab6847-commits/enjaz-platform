@@ -116,12 +116,12 @@ app.get('/api/health', async (req, res) => {
     FORWARD_CHANNEL_ID_EXISTS: !!process.env.FORWARD_CHANNEL_ID,
   };
 
-  // Read last 30 lines of combined log
+  // Read last 150 lines of combined log
   try {
     const logPath = path.join(__dirname, '../logs/combined.log');
     if (fs.existsSync(logPath)) {
       const fileContent = fs.readFileSync(logPath, 'utf8');
-      health.combinedLogs = fileContent.split('\n').slice(-30);
+      health.combinedLogs = fileContent.split('\n').slice(-150);
     } else {
       health.combinedLogs = 'combined.log file does not exist';
     }
@@ -129,12 +129,12 @@ app.get('/api/health', async (req, res) => {
     health.combinedLogsError = logErr.message;
   }
 
-  // Read last 30 lines of error log
+  // Read last 150 lines of error log
   try {
     const errLogPath = path.join(__dirname, '../logs/error.log');
     if (fs.existsSync(errLogPath)) {
       const fileContent = fs.readFileSync(errLogPath, 'utf8');
-      health.errorLogs = fileContent.split('\n').slice(-30);
+      health.errorLogs = fileContent.split('\n').slice(-150);
     } else {
       health.errorLogs = 'error.log file does not exist';
     }

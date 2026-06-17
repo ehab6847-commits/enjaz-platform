@@ -142,7 +142,7 @@ const handleNewMessage = async (event, account, client) => {
       ? [sender.firstName, sender.lastName].filter(Boolean).join(' ') || 'Unknown'
       : 'Unknown';
     const senderUsername = sender?.username || null;
-    const senderId = sender ? String(sender.id) : null;
+    const senderId = sender ? String(sender.id) : 'unknown';
 
     // Build links
     const chatUsername = chat.username;
@@ -159,10 +159,14 @@ const handleNewMessage = async (event, account, client) => {
 
     const { isRequest, isAdvertiser, serviceType, confidenceScore, keywords, priority } = classification;
 
+    logger.info(`Classification result for msg in "${groupName}" (chat ${groupId}): isRequest=${isRequest}, confidence=${confidenceScore}, service=${serviceType}`);
+
     // Only save if it's a request (not spam/ads) with sufficient confidence
     if (!isRequest || confidenceScore < 0.5) {
       if (isAdvertiser) {
-        logger.debug('Skipping advertiser message', { groupName, sender: senderName });
+        logger.info(`Msg in "${groupName}" skipped: classified as advertiser.`);
+      } else {
+        logger.info(`Msg in "${groupName}" skipped: not a request or confidence too low (${confidenceScore}).`);
       }
       return;
     }
@@ -171,26 +175,32 @@ const handleNewMessage = async (event, account, client) => {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     // Save to database
-    const request = await db.request.create({
-      data: {
-        messageText,
-        senderName,
-        senderUsername,
-        senderId,
-        profileLink,
-        messageLink,
-        groupName,
-        groupId,
-        country: monitoredGroup.country || null,
-        serviceType,
-        confidenceScore,
-        keywords,
-        status: 'NEW',
-        priority,
-        isAdvertiser: false,
-        expiresAt,
-      },
-    });
+    let request;
+    try {
+      request = await db.request.create({
+        data: {
+          messageText,
+          senderName,
+          senderUsername,
+          senderId,
+          profileLink,
+          messageLink,
+          groupName,
+          groupId,
+          country: monitoredGroup.country || null,
+          serviceType,
+          confidenceScore,
+          keywords,
+          status: 'NEW',
+          priority,
+          isAdvertiser: false,
+          expiresAt,
+        },
+      });
+    } catch (dbErr) {
+      logger.error('Failed to save request to database:', { error: dbErr.message, stack: dbErr.stack });
+      return;
+    }
 
     logger.info('New request captured', {
       requestId: request.id,
