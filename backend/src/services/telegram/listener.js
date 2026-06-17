@@ -108,45 +108,59 @@ const handleNewMessage = async (event, account, client) => {
     const messageText = message.message.trim();
     if (!messageText || messageText.length < 5) return;
 
-    logger.info(`Incoming msg from ${account.phone} (chat ${message.chatId}): "${messageText.substring(0, 50)}..."`);
+    const groupId = String(message.chatId || '');
+    if (!groupId) return;
 
-    // Get chat/group info
-    const chat = await event.getChat();
-    if (!chat) return;
+    logger.info(`Incoming msg from ${account.phone} (chat ${groupId}): "${messageText.substring(0, 50)}..."`);
 
-    let groupId = String(chat.id || '');
-    const isChannel = chat.className === 'Channel' || event.isChannel;
-    const isGroup = chat.className === 'Chat' || event.isGroup;
-
-    if (isChannel && !groupId.startsWith('-100')) {
-      groupId = `-100${groupId}`;
-    } else if (isGroup && !groupId.startsWith('-')) {
-      groupId = `-${groupId}`;
-    }
-
-    const groupName = chat.title || chat.username || 'Unknown Group';
-
-    // Check if this group is in our monitored list
+    // Check if this group is in our monitored list in DB first (no Telegram API call)
     const monitoredGroup = await db.monitoredGroup.findFirst({
       where: { groupId, accountId: account.id, isActive: true },
     });
 
     if (!monitoredGroup) {
-      logger.info(`Msg from ${account.phone} skipped: group ${groupId} ("${groupName}") is not monitored.`);
+      // Quietly skip unmonitored groups to avoid log flooding
       return;
     }
 
-    // Get sender info
-    const sender = await event.getSender();
-    const senderName = sender
-      ? [sender.firstName, sender.lastName].filter(Boolean).join(' ') || 'Unknown'
-      : 'Unknown';
-    const senderUsername = sender?.username || null;
-    const senderId = sender ? String(sender.id) : 'unknown';
+    const groupName = monitoredGroup.groupName || 'Unknown Group';
+
+    // Fetch sender info with a timeout to prevent hanging on Telegram API
+    let senderName = 'Unknown';
+    let senderUsername = null;
+    let senderId = 'unknown';
+
+    try {
+      const sender = await Promise.race([
+        event.getSender(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+      ]).catch(() => null);
+
+      if (sender) {
+        senderName = [sender.firstName, sender.lastName].filter(Boolean).join(' ') || sender.title || 'Unknown';
+        senderUsername = sender.username || null;
+        senderId = sender.id ? String(sender.id) : 'unknown';
+      } else if (message.fromId) {
+        senderId = String(message.fromId.userId || message.fromId.channelId || 'unknown');
+      }
+    } catch (senderErr) {
+      logger.debug(`Could not fetch sender info for message in ${groupName}: ${senderErr.message}`);
+    }
 
     // Build links
-    const chatUsername = chat.username;
     const profileLink = senderUsername ? `https://t.me/${senderUsername}` : null;
+    
+    let chatUsername = null;
+    try {
+      const chat = await Promise.race([
+        event.getChat(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 1500))
+      ]).catch(() => null);
+      if (chat) {
+        chatUsername = chat.username || null;
+      }
+    } catch (e) {}
+
     const messageLink = chatUsername && message.id
       ? `https://t.me/${chatUsername}/${message.id}`
       : null;
