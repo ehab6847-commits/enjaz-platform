@@ -101,6 +101,7 @@ const login = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
+      token: accessToken,
       accessToken,
       refreshToken,
       user: {
@@ -229,6 +230,7 @@ const verify2fa = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
+      token: accessToken,
       accessToken,
       refreshToken,
       user: {
@@ -280,6 +282,7 @@ const refresh = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
+      token: newAccessToken,
       accessToken: newAccessToken,
     });
   } catch (err) {
