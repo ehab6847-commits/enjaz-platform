@@ -66,18 +66,6 @@ app.get('/api/health', async (req, res) => {
     uptime: process.uptime(),
   };
 
-  const dbUrl = process.env.DATABASE_URL || '';
-  const match = dbUrl.match(/@([^:/]+)/);
-  health.dbHost = match ? match[1] : 'unknown';
-
-  try {
-    const dns = require('dns').promises;
-    const ips = await dns.resolve(health.dbHost);
-    health.dnsResolve = ips;
-  } catch (dnsErr) {
-    health.dnsResolve = 'failed: ' + dnsErr.message;
-  }
-
   // Try to check DB but don't fail if it's not available
   try {
     const db = require('./config/database');
@@ -85,12 +73,7 @@ app.get('/api/health', async (req, res) => {
     health.database = 'connected';
   } catch (e) {
     health.database = 'disconnected';
-    health.dbError = {
-      message: e.message,
-      code: e.code,
-      meta: e.meta,
-      stack: e.stack
-    };
+    health.dbError = e.message ? e.message.substring(0, 100) : 'unknown';
   }
 
   res.status(200).json(health);
@@ -145,10 +128,6 @@ const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, async () => {
   logger.info(`🚀 Enjaz Backend running on port ${PORT}`);
   logger.info(`📡 Environment: ${process.env.NODE_ENV}`);
-  
-  const dbUrl = process.env.DATABASE_URL || '';
-  const match = dbUrl.match(/@([^:/]+)/);
-  logger.info(`📡 Database Host in Env: ${match ? match[1] : 'unknown'}`);
 
 
   // Test database connection (don't crash if it fails)
