@@ -108,6 +108,8 @@ const handleNewMessage = async (event, account, client) => {
     const messageText = message.message.trim();
     if (!messageText || messageText.length < 5) return;
 
+    logger.info(`Incoming msg from ${account.phone} (chat ${message.chatId}): "${messageText.substring(0, 50)}..."`);
+
     // Get chat/group info
     const chat = await event.getChat();
     if (!chat) return;
@@ -129,7 +131,10 @@ const handleNewMessage = async (event, account, client) => {
       where: { groupId, accountId: account.id, isActive: true },
     });
 
-    if (!monitoredGroup) return;
+    if (!monitoredGroup) {
+      logger.info(`Msg from ${account.phone} skipped: group ${groupId} ("${groupName}") is not monitored.`);
+      return;
+    }
 
     // Get sender info
     const sender = await event.getSender();
