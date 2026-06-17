@@ -1,6 +1,6 @@
 'use strict';
 
-const { TelegramClient } = require('telegram');
+const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 const db = require('../config/database');
 const logger = require('../config/logger');
@@ -354,27 +354,50 @@ const verifyLoginCode = async (req, res, next) => {
 
     const { client, phoneCodeHash } = sessionData;
 
+    let user;
     try {
-      // Sign in
-      await client.signIn({
+      // Sign in using the low-level Api.auth.SignIn call to avoid sendCode restarting the auth flow
+      const result = await client.invoke(new Api.auth.SignIn({
         phoneNumber: phone,
         phoneCodeHash,
         phoneCode: code,
-        password: password ? () => Promise.resolve(password) : undefined,
-      });
-    } catch (signInErr) {
-      if (signInErr.message.includes('SESSION_PASSWORD_NEEDED') || signInErr.message.includes('password') || signInErr.name === 'SessionPasswordNeededError') {
-        return res.status(200).json({
+      }));
+      
+      if (result instanceof Api.auth.AuthorizationSignUpRequired) {
+        return res.status(400).json({
           success: false,
-          requiresPassword: true,
-          message: '2FA Password is required for this account.',
+          message: 'هذا الرقم غير مسجل في تيليجرام. التسجيل من خلال البوت غير مدعوم حالياً.',
         });
       }
-      throw signInErr;
+      user = result.user;
+    } catch (signInErr) {
+      if (signInErr.message.includes('SESSION_PASSWORD_NEEDED') || signInErr.name === 'SessionPasswordNeededError') {
+        if (!password) {
+          return res.status(200).json({
+            success: false,
+            requiresPassword: true,
+            message: '2FA Password is required for this account.',
+          });
+        }
+        // If password was provided, proceed to sign in with password
+        const apiId = parseInt(process.env.TELEGRAM_API_ID || '0', 10);
+        const apiHash = process.env.TELEGRAM_API_HASH || '';
+        user = await client.signInWithPassword(
+          { apiId, apiHash },
+          {
+            password: () => Promise.resolve(password),
+            onError: (err) => {
+              throw err;
+            }
+          }
+        );
+      } else {
+        throw signInErr;
+      }
     }
 
     // Successful sign in! Let's get user info
-    const me = await client.getMe();
+    const me = user || await client.getMe();
     const username = me.username || '';
     const firstName = me.firstName || '';
     const lastName = me.lastName || '';
