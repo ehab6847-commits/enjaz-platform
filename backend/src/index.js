@@ -59,6 +59,11 @@ app.use(morgan('combined', {
 
 // ─── Unrestricted Routes (Health & Diagnostics) ───────────────────────────────
 app.get('/api/health', async (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  const db = require('./config/database');
+  const { activeClients } = require('./services/telegram/listener');
+
   const health = {
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -66,14 +71,75 @@ app.get('/api/health', async (req, res) => {
     uptime: process.uptime(),
   };
 
-  // Try to check DB but don't fail if it's not available
+  // Check Database connection
   try {
-    const db = require('./config/database');
     await db.$queryRawUnsafe('SELECT 1');
     health.database = 'connected';
   } catch (e) {
     health.database = 'disconnected';
     health.dbError = e.message ? e.message.substring(0, 100) : 'unknown';
+  }
+
+  // Check Telegram listener status
+  try {
+    const activePhones = [];
+    const accounts = await db.telegramAccount.findMany({
+      where: { isActive: true },
+      select: { id: true, phone: true }
+    });
+    for (const [id, client] of activeClients.entries()) {
+      const acc = accounts.find(a => a.id === id);
+      activePhones.push({
+        phone: acc ? acc.phone : 'unknown',
+        connected: client.connected,
+      });
+    }
+
+    health.telegram = {
+      activeListenersCount: activeClients.size,
+      activeListeners: activePhones,
+      monitoredGroupsCount: await db.monitoredGroup.count(),
+      activeGroupsCount: await db.monitoredGroup.count({ where: { isActive: true } }),
+      requestsCount: await db.request.count(),
+    };
+  } catch (err) {
+    health.telegramError = err.message;
+  }
+
+  // Check key environment variables
+  health.envCheck = {
+    OPENAI_API_KEY_EXISTS: !!process.env.OPENAI_API_KEY,
+    OPENAI_API_KEY_IS_PLACEHOLDER: process.env.OPENAI_API_KEY === 'sk-placeholder',
+    TELEGRAM_API_ID_EXISTS: !!process.env.TELEGRAM_API_ID,
+    TELEGRAM_API_HASH_EXISTS: !!process.env.TELEGRAM_API_HASH,
+    TELEGRAM_BOT_TOKEN_EXISTS: !!process.env.TELEGRAM_BOT_TOKEN,
+    FORWARD_CHANNEL_ID_EXISTS: !!process.env.FORWARD_CHANNEL_ID,
+  };
+
+  // Read last 30 lines of combined log
+  try {
+    const logPath = path.join(__dirname, '../logs/combined.log');
+    if (fs.existsSync(logPath)) {
+      const fileContent = fs.readFileSync(logPath, 'utf8');
+      health.combinedLogs = fileContent.split('\n').slice(-30);
+    } else {
+      health.combinedLogs = 'combined.log file does not exist';
+    }
+  } catch (logErr) {
+    health.combinedLogsError = logErr.message;
+  }
+
+  // Read last 30 lines of error log
+  try {
+    const errLogPath = path.join(__dirname, '../logs/error.log');
+    if (fs.existsSync(errLogPath)) {
+      const fileContent = fs.readFileSync(errLogPath, 'utf8');
+      health.errorLogs = fileContent.split('\n').slice(-30);
+    } else {
+      health.errorLogs = 'error.log file does not exist';
+    }
+  } catch (logErr) {
+    health.errorLogsError = logErr.message;
   }
 
   res.status(200).json(health);
