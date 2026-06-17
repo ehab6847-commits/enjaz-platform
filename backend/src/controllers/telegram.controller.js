@@ -4,7 +4,7 @@ const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 const db = require('../config/database');
 const logger = require('../config/logger');
-const { addNewListener } = require('../services/telegram/listener');
+const { addNewListener, activeClients } = require('../services/telegram/listener');
 
 // Map to hold in-memory pending client instances and their phoneCodeHash
 const loginSessions = new Map();
@@ -455,6 +455,85 @@ const verifyLoginCode = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/telegram/debug-status
+ * Returns health report, active listener clients, env variable status, and recent log contents.
+ */
+const getDebugStatus = async (req, res, next) => {
+  const fs = require('fs');
+  const path = require('path');
+  try {
+    const activePhones = [];
+    const accounts = await db.telegramAccount.findMany({
+      where: { isActive: true },
+    });
+    for (const [id, client] of activeClients.entries()) {
+      const acc = accounts.find((a) => a.id === id);
+      activePhones.push({
+        id,
+        phone: acc ? acc.phone : 'unknown',
+        connected: client.connected,
+      });
+    }
+
+    // Read last 100 lines of combined log
+    let combinedLogs = '';
+    try {
+      const logPath = path.join(__dirname, '../../logs/combined.log');
+      if (fs.existsSync(logPath)) {
+        const fileContent = fs.readFileSync(logPath, 'utf8');
+        combinedLogs = fileContent.split('\n').slice(-100).join('\n');
+      } else {
+        combinedLogs = 'combined.log file does not exist';
+      }
+    } catch (logErr) {
+      combinedLogs = 'Error reading combined.log: ' + logErr.message;
+    }
+
+    // Read last 100 lines of error log
+    let errorLogs = '';
+    try {
+      const errLogPath = path.join(__dirname, '../../logs/error.log');
+      if (fs.existsSync(errLogPath)) {
+        const fileContent = fs.readFileSync(errLogPath, 'utf8');
+        errorLogs = fileContent.split('\n').slice(-100).join('\n');
+      } else {
+        errorLogs = 'error.log file does not exist';
+      }
+    } catch (logErr) {
+      errorLogs = 'Error reading error.log: ' + logErr.message;
+    }
+
+    // Check env variables
+    const envCheck = {
+      OPENAI_API_KEY_EXISTS: !!process.env.OPENAI_API_KEY,
+      OPENAI_API_KEY_IS_PLACEHOLDER: process.env.OPENAI_API_KEY === 'sk-placeholder',
+      TELEGRAM_API_ID_EXISTS: !!process.env.TELEGRAM_API_ID,
+      TELEGRAM_API_HASH_EXISTS: !!process.env.TELEGRAM_API_HASH,
+      TELEGRAM_BOT_TOKEN_EXISTS: !!process.env.TELEGRAM_BOT_TOKEN,
+      FORWARD_CHANNEL_ID_EXISTS: !!process.env.FORWARD_CHANNEL_ID,
+    };
+
+    const monitoredGroupsCount = await db.monitoredGroup.count();
+    const activeGroupsCount = await db.monitoredGroup.count({ where: { isActive: true } });
+    const requestsCount = await db.request.count();
+
+    return res.status(200).json({
+      success: true,
+      activeListenersCount: activeClients.size,
+      activeListeners: activePhones,
+      monitoredGroupsCount,
+      activeGroupsCount,
+      requestsCount,
+      envCheck,
+      combinedLogs,
+      errorLogs,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   listAccounts,
   addAccount,
@@ -467,4 +546,5 @@ module.exports = {
   deleteGroup,
   sendLoginCode,
   verifyLoginCode,
+  getDebugStatus,
 };

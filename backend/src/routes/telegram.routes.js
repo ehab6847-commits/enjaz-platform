@@ -56,6 +56,13 @@ router.use(authenticate);
 router.get('/accounts', requireAdmin, telegramController.listAccounts);
 
 /**
+ * @route  GET /api/telegram/debug-status
+ * @desc   Get listeners debug status and logs
+ * @access Admin
+ */
+router.get('/debug-status', requireAdmin, telegramController.getDebugStatus);
+
+/**
  * @route  POST /api/telegram/login/send-code
  * @desc   Send login verification code
  * @access Admin

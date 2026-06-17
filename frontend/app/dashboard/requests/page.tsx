@@ -151,7 +151,7 @@ function RequestDetailModal({
 
         {/* Service & Priority & Status */}
         <div className="flex flex-wrap gap-3 items-center">
-          <ServiceBadge type={request.service} label={service.label} />
+          <ServiceBadge type={service.type} label={service.label} />
           <PriorityBadge priority={request.priority} />
           <StatusBadge status={request.status} />
         </div>
@@ -357,13 +357,77 @@ export default function RequestsPage() {
   // Fetch requests
   const { data, isLoading, isFetching, refetch } = useQuery<RequestsResponse>({
     queryKey: ['requests', appliedFilters, page],
-    queryFn: () =>
-      apiGet<RequestsResponse>('/requests', {
-        ...appliedFilters,
+    queryFn: async () => {
+      const params: Record<string, any> = {
         page,
-        pageSize: PAGE_SIZE,
-      }),
+        limit: PAGE_SIZE,
+      };
+
+      if (appliedFilters.search) params.search = appliedFilters.search;
+      if (appliedFilters.country) params.country = appliedFilters.country;
+
+      if (appliedFilters.service) {
+        const serviceMap: Record<string, string> = {
+          programming: 'برمجة',
+          research: 'بحث',
+          presentations: 'عروض',
+          translation: 'ترجمة',
+          design: 'تصميم',
+          writing: 'واجبات',
+          consulting: 'استشارات',
+          data_analysis: 'تحليل بيانات',
+          video: 'فيديو',
+        };
+        params.serviceType = serviceMap[appliedFilters.service] || appliedFilters.service;
+      }
+
+      if (appliedFilters.status) {
+        const statusMap: Record<string, string> = {
+          new: 'NEW',
+          seen: 'VIEWED',
+          assigned: 'ASSIGNED',
+          archived: 'ARCHIVED',
+        };
+        params.status = statusMap[appliedFilters.status] || appliedFilters.status.toUpperCase();
+      }
+
+      if (appliedFilters.priority) {
+        params.priority = appliedFilters.priority.toUpperCase();
+      }
+
+      const response = await apiGet<any>('/requests', params);
+
+      const mappedRequests = (response.data || []).map((req: any) => ({
+        id: req.id,
+        messageId: req.id,
+        sender: {
+          name: req.senderName || 'مجهول',
+          username: req.senderUsername || 'unknown',
+          telegramId: req.senderId || '',
+          profileUrl: req.profileLink || undefined,
+        },
+        message: req.messageText || '',
+        groupName: req.groupName || 'غير معروفة',
+        messageLink: req.messageLink || undefined,
+        country: req.country || '',
+        service: req.serviceType || '',
+        status: (req.status || 'NEW').toLowerCase(),
+        priority: (req.priority || 'NORMAL').toLowerCase(),
+        confidence: Math.round(req.confidenceScore * 100) || 0,
+        keywords: req.keywords || [],
+        createdAt: req.capturedAt || req.createdAt || new Date().toISOString(),
+        updatedAt: req.capturedAt || new Date().toISOString(),
+      }));
+
+      return {
+        requests: mappedRequests,
+        total: response.pagination?.total || 0,
+        page: response.pagination?.page || 1,
+        pageSize: response.pagination?.limit || PAGE_SIZE,
+      };
+    },
     staleTime: 15000,
+    refetchInterval: 3000, // Auto-refresh requests list every 3 seconds
   });
 
   // Real-time new request
@@ -385,8 +449,16 @@ export default function RequestsPage() {
 
   // Status update mutation
   const updateStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      apiPatch(`/requests/${id}/status`, { status }),
+    mutationFn: ({ id, status }: { id: string; status: string }) => {
+      const statusMap: Record<string, string> = {
+        new: 'NEW',
+        seen: 'VIEWED',
+        assigned: 'ASSIGNED',
+        archived: 'ARCHIVED',
+      };
+      const dbStatus = statusMap[status] || status.toUpperCase();
+      return apiPatch(`/requests/${id}/status`, { status: dbStatus });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['requests'] });
       toast.success('تم تحديث الحالة');
@@ -398,7 +470,7 @@ export default function RequestsPage() {
 
   // Archive mutation
   const archiveRequest = useMutation({
-    mutationFn: (id: string) => apiPatch(`/requests/${id}/status`, { status: 'archived' }),
+    mutationFn: (id: string) => apiPatch(`/requests/${id}/status`, { status: 'ARCHIVED' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['requests'] });
       toast.success('تم أرشفة الطلب');
@@ -643,7 +715,7 @@ export default function RequestsPage() {
                           </span>
                         </td>
                         <td>
-                          <ServiceBadge type={req.service} label={service.label} />
+                          <ServiceBadge type={service.type} label={service.label} />
                         </td>
                         <td>
                           <ConfidenceBar value={req.confidence} />

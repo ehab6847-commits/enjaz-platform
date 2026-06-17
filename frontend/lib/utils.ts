@@ -39,7 +39,6 @@ export function getCountryInfo(code: string) {
   return COUNTRIES[code] ?? { name: code, flag: '🌍' };
 }
 
-// ─── Service Types ─────────────────────────────────────────────
 export const SERVICE_TYPES: Record<string, { label: string; color: string }> = {
   programming: { label: 'برمجة', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
   research: { label: 'بحث علمي', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
@@ -53,8 +52,40 @@ export const SERVICE_TYPES: Record<string, { label: string; color: string }> = {
   other: { label: 'أخرى', color: 'bg-gray-500/20 text-gray-300 border-gray-500/30' },
 };
 
+export const dbServiceToKeyMap: Record<string, string> = {
+  'برمجة': 'programming',
+  'بحث': 'research',
+  'بحث علمي': 'research',
+  'عروض': 'presentations',
+  'عروض تقديمية': 'presentations',
+  'ترجمة': 'translation',
+  'تصميم': 'design',
+  'كتابة': 'writing',
+  'واجبات': 'writing',
+  'تقارير': 'writing',
+  'استشارات': 'consulting',
+  'تحليل بيانات': 'data_analysis',
+  'فيديو': 'video',
+  'CV': 'presentations',
+  'رياضيات': 'other',
+  'اختبارات': 'other',
+  'مشاريع': 'programming',
+  'طب': 'other',
+  'سكليف': 'other',
+  'تدريب': 'other',
+};
+
 export function getServiceInfo(type: string) {
-  return SERVICE_TYPES[type] ?? SERVICE_TYPES.other;
+  if (!type) return { ...SERVICE_TYPES.other, type: 'other' };
+  const key = dbServiceToKeyMap[type] ?? type;
+  if (SERVICE_TYPES[key]) {
+    return { ...SERVICE_TYPES[key], type: key };
+  }
+  return {
+    label: type,
+    color: 'bg-gray-500/25 text-gray-300 border border-gray-500/35',
+    type: 'other',
+  };
 }
 
 // ─── Priority Helpers ─────────────────────────────────────────
