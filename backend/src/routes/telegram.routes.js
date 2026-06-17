@@ -19,6 +19,24 @@ const addAccountSchema = z.object({
   sessionString: z.string().min(10, 'Session string is required'),
 });
 
+const sendCodeSchema = z.object({
+  phone: z
+    .string()
+    .min(7, 'Phone number is too short')
+    .max(20, 'Phone number is too long')
+    .regex(/^\+?[0-9]+$/, 'Invalid phone number format'),
+});
+
+const verifyCodeSchema = z.object({
+  phone: z
+    .string()
+    .min(7, 'Phone number is too short')
+    .max(20, 'Phone number is too long')
+    .regex(/^\+?[0-9]+$/, 'Invalid phone number format'),
+  code: z.string().min(1, 'Verification code is required'),
+  password: z.string().optional(),
+});
+
 const addGroupSchema = z.object({
   groupId: z.string().min(1, 'Group ID is required'),
   groupName: z.string().min(1, 'Group name is required'),
@@ -36,6 +54,20 @@ router.use(authenticate);
  * @access Admin
  */
 router.get('/accounts', requireAdmin, telegramController.listAccounts);
+
+/**
+ * @route  POST /api/telegram/login/send-code
+ * @desc   Send login verification code
+ * @access Admin
+ */
+router.post('/login/send-code', requireAdmin, validate({ body: sendCodeSchema }), telegramController.sendLoginCode);
+
+/**
+ * @route  POST /api/telegram/login/verify-code
+ * @desc   Verify login code and save account
+ * @access Admin
+ */
+router.post('/login/verify-code', requireAdmin, validate({ body: verifyCodeSchema }), telegramController.verifyLoginCode);
 
 /**
  * @route  POST /api/telegram/accounts

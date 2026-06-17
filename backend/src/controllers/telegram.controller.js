@@ -1,8 +1,13 @@
 'use strict';
 
+const { TelegramClient } = require('telegram');
+const { StringSession } = require('telegram/sessions');
 const db = require('../config/database');
 const logger = require('../config/logger');
 const { addNewListener } = require('../services/telegram/listener');
+
+// Map to hold in-memory pending client instances and their phoneCodeHash
+const loginSessions = new Map();
 
 // ─── Controllers ───────────────────────────────────────────────────────────────
 
@@ -260,6 +265,173 @@ const deleteGroup = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/telegram/login/send-code
+ * Sends a Telegram login verification code to the phone number.
+ */
+const sendLoginCode = async (req, res, next) => {
+  try {
+    const { phone } = req.body;
+    
+    logger.info('Received sendLoginCode request', { phone });
+
+    const apiId = parseInt(process.env.TELEGRAM_API_ID || '0', 10);
+    const apiHash = process.env.TELEGRAM_API_HASH || '';
+
+    if (!apiId || !apiHash) {
+      return res.status(500).json({
+        success: false,
+        message: 'TELEGRAM_API_ID or TELEGRAM_API_HASH is not configured on the server.',
+      });
+    }
+
+    // Disconnect old pending client if exists
+    const oldSession = loginSessions.get(phone);
+    if (oldSession && oldSession.client) {
+      try {
+        await oldSession.client.disconnect();
+      } catch (e) {
+        // ignore
+      }
+      loginSessions.delete(phone);
+    }
+
+    // Initialize temporary client
+    const session = new StringSession('');
+    const client = new TelegramClient(session, apiId, apiHash, {
+      connectionRetries: 5,
+    });
+
+    await client.connect();
+
+    // Call sendCode
+    const { phoneCodeHash } = await client.sendCode(
+      {
+        apiId,
+        apiHash,
+      },
+      phone
+    );
+
+    // Save in map
+    loginSessions.set(phone, {
+      client,
+      phoneCodeHash,
+      createdAt: Date.now(),
+    });
+
+    logger.info(`Telegram login code sent for ${phone}`);
+    return res.status(200).json({
+      success: true,
+      message: 'Verification code sent successfully.',
+    });
+  } catch (err) {
+    logger.error('Failed to send Telegram login code', { error: err.message });
+    return res.status(400).json({
+      success: false,
+      message: `Failed to send code: ${err.message}`,
+    });
+  }
+};
+
+/**
+ * POST /api/telegram/login/verify-code
+ * Verifies the login code, saves the account session, and starts the listener.
+ */
+const verifyLoginCode = async (req, res, next) => {
+  try {
+    const { phone, code, password } = req.body;
+
+    logger.info('Received verifyLoginCode request', { phone, hasPassword: !!password });
+
+    const sessionData = loginSessions.get(phone);
+    if (!sessionData) {
+      return res.status(400).json({
+        success: false,
+        message: 'Login session expired or not found. Please request verification code again.',
+      });
+    }
+
+    const { client, phoneCodeHash } = sessionData;
+
+    try {
+      // Sign in
+      await client.signIn({
+        phoneNumber: phone,
+        phoneCodeHash,
+        phoneCode: code,
+        password: password ? () => Promise.resolve(password) : undefined,
+      });
+    } catch (signInErr) {
+      if (signInErr.message.includes('SESSION_PASSWORD_NEEDED') || signInErr.message.includes('password') || signInErr.name === 'SessionPasswordNeededError') {
+        return res.status(200).json({
+          success: false,
+          requiresPassword: true,
+          message: '2FA Password is required for this account.',
+        });
+      }
+      throw signInErr;
+    }
+
+    // Successful sign in! Let's get user info
+    const me = await client.getMe();
+    const username = me.username || '';
+    const firstName = me.firstName || '';
+    const lastName = me.lastName || '';
+    const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'Telegram User';
+
+    const sessionString = client.session.save();
+
+    // Save/upsert to DB
+    const account = await db.telegramAccount.upsert({
+      where: { phone },
+      create: {
+        phone,
+        sessionString,
+        isActive: true,
+        lastSeen: new Date(),
+      },
+      update: {
+        sessionString,
+        isActive: true,
+        lastSeen: new Date(),
+      },
+    });
+
+    logger.info('Telegram account authorized and saved', { phone, fullName, username });
+
+    // Clean up temporary session
+    loginSessions.delete(phone);
+
+    // Start background listener for this account
+    try {
+      await addNewListener(account);
+    } catch (listenerErr) {
+      logger.warn('Could not start listener for new account immediately', {
+        accountId: account.id,
+        error: listenerErr.message,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged in and account registered successfully.',
+      data: {
+        id: account.id,
+        phone: account.phone,
+        fullName,
+        username,
+      },
+    });
+  } catch (err) {
+    logger.error('Failed to verify Telegram login code', { error: err.message });
+    return res.status(400).json({
+      success: false,
+      message: `Verification failed: ${err.message}`,
+    });
+  }
+};
+
 module.exports = {
   listAccounts,
   addAccount,
@@ -270,4 +442,6 @@ module.exports = {
   listAllGroups,
   toggleGroup,
   deleteGroup,
+  sendLoginCode,
+  verifyLoginCode,
 };

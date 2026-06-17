@@ -30,9 +30,15 @@ export default function TelegramAccountsPage() {
   const [groups, setGroups] = useState<MonitoredGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   
-  // Create account modal
+  // Create account modal state
   const [showAddModal, setShowAddModal] = useState(false);
   const [newPhone, setNewPhone] = useState('');
+  const [step, setStep] = useState<'phone' | 'otp'>('phone');
+  const [otp, setOtp] = useState('');
+  const [password, setPassword] = useState('');
+  const [requiresPassword, setRequiresPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const fetchAccounts = async () => {
     try {
@@ -42,7 +48,7 @@ export default function TelegramAccountsPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setAccounts(data);
+        setAccounts(data.data || []);
       }
     } catch (error) {
       console.error('Failed to fetch accounts:', error);
@@ -65,7 +71,7 @@ export default function TelegramAccountsPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setGroups(data);
+        setGroups(data.data || []);
       }
     } catch (error) {
       console.error('Failed to fetch groups:', error);
@@ -91,11 +97,23 @@ export default function TelegramAccountsPage() {
     }
   };
 
-  const handleAddAccount = async (e: React.FormEvent) => {
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setNewPhone('');
+    setOtp('');
+    setPassword('');
+    setStep('phone');
+    setRequiresPassword(false);
+    setModalError(null);
+  };
+
+  const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitting(true);
+    setModalError(null);
     try {
       const token = localStorage.getItem('accessToken');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/accounts`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/login/send-code`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -104,17 +122,55 @@ export default function TelegramAccountsPage() {
         body: JSON.stringify({ phone: newPhone })
       });
       
-      if (res.ok) {
-        setNewPhone('');
-        setShowAddModal(false);
-        fetchAccounts();
-        alert('تمت إضافة الحساب! يرجى تشغيل سكريبت create-session.js في الخادم لربط الحساب فعلياً.');
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setStep('otp');
       } else {
-        const err = await res.json();
-        alert(err.error || 'حدث خطأ');
+        setModalError(data.message || 'فشل إرسال رمز التحقق. تأكد من الرقم وصيغته.');
       }
     } catch (error) {
-      console.error('Error adding account:', error);
+      console.error('Error sending code:', error);
+      setModalError('حدث خطأ في الاتصال بالسيرفر.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setModalError(null);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telegram/login/verify-code`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ phone: newPhone, code: otp, password })
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        if (data.requiresPassword) {
+          setRequiresPassword(true);
+          setModalError('الحساب محمي بالتحقق بخطوتين. يرجى إدخال كلمة المرور.');
+        } else if (data.success) {
+          handleCloseModal();
+          fetchAccounts();
+          alert('تم ربط الحساب وتفعيل البوت بنجاح! 🎉');
+        } else {
+          setModalError(data.message || 'رمز التحقق غير صحيح.');
+        }
+      } else {
+        setModalError(data.message || 'فشل التحقق من الرمز.');
+      }
+    } catch (error) {
+      console.error('Error verifying code:', error);
+      setModalError('حدث خطأ في الاتصال بالسيرفر.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -268,43 +324,122 @@ export default function TelegramAccountsPage() {
       {/* Add Account Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowAddModal(false)} />
-          <div className="relative bg-[#1E293B] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-2">إضافة حساب تيليجرام</h3>
-            <p className="text-slate-400 text-sm mb-6">
-              أدخل رقم الهاتف مع رمز الدولة. بعد الإضافة، يجب عليك تشغيل أداة إنشاء الجلسة في الخادم وتأكيد رمز الدخول.
-            </p>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleCloseModal} />
+          <div className="relative bg-[#1E293B] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl transition-all">
+            <h3 className="text-xl font-bold text-white mb-2">ربط حساب تيليجرام</h3>
             
-            <form onSubmit={handleAddAccount} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">رقم الهاتف</label>
-                <input
-                  type="text"
-                  dir="ltr"
-                  placeholder="+966xxxxxxxxx"
-                  value={newPhone}
-                  onChange={e => setNewPhone(e.target.value)}
-                  className="w-full bg-[#0F172A] border border-white/10 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-left"
-                  required
-                />
+            {modalError && (
+              <div className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl p-3 text-sm mb-4 text-right">
+                ⚠️ {modalError}
               </div>
-              
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="flex-1 px-4 py-2 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 transition-colors"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
-                >
-                  إضافة الحساب
-                </button>
-              </div>
-            </form>
+            )}
+
+            {step === 'phone' ? (
+              <>
+                <p className="text-slate-400 text-sm mb-6">
+                  أدخل رقم الهاتف مع رمز الدولة (مثال: <span dir="ltr">+966554367046</span>). سيتم إرسال رمز تحقق لحسابك.
+                </p>
+                <form onSubmit={handleSendCode} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">رقم الهاتف</label>
+                    <input
+                      type="text"
+                      dir="ltr"
+                      placeholder="+966xxxxxxxxx"
+                      value={newPhone}
+                      onChange={e => setNewPhone(e.target.value)}
+                      className="w-full bg-[#0F172A] border border-white/10 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-left"
+                      required
+                      disabled={submitting}
+                    />
+                  </div>
+                  
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={handleCloseModal}
+                      className="flex-1 px-4 py-2 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 transition-colors"
+                      disabled={submitting}
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex items-center justify-center gap-2"
+                      disabled={submitting}
+                    >
+                      {submitting ? (
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        'إرسال رمز التحقق'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <>
+                <p className="text-slate-400 text-sm mb-6">
+                  تم إرسال رمز التحقق إلى حساب تيليجرام الخاص بالرقم <strong dir="ltr">{newPhone}</strong>. يرجى إدخاله أدناه.
+                </p>
+                <form onSubmit={handleVerifyCode} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">رمز التحقق (OTP)</label>
+                    <input
+                      type="text"
+                      dir="ltr"
+                      placeholder="12345"
+                      value={otp}
+                      onChange={e => setOtp(e.target.value)}
+                      className="w-full bg-[#0F172A] border border-white/10 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-center font-bold tracking-widest text-lg"
+                      required
+                      disabled={submitting}
+                    />
+                  </div>
+
+                  {(requiresPassword || password) && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">كلمة مرور التحقق بخطوتين (2FA)</label>
+                      <input
+                        type="password"
+                        dir="ltr"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        className="w-full bg-[#0F172A] border border-white/10 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-left"
+                        disabled={submitting}
+                        required={requiresPassword}
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        مطلوب فقط إذا كان حسابك على تيليجرام محمي بكلمة مرور إضافية.
+                      </p>
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => setStep('phone')}
+                      className="flex-1 px-4 py-2 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 transition-colors"
+                      disabled={submitting}
+                    >
+                      السابق
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex items-center justify-center gap-2"
+                      disabled={submitting}
+                    >
+                      {submitting ? (
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        'تأكيد وتسجيل الدخول'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}
