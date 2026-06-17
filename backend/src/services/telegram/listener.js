@@ -112,7 +112,16 @@ const handleNewMessage = async (event, account, client) => {
     const chat = await event.getChat();
     if (!chat) return;
 
-    const groupId = String(chat.id || '');
+    let groupId = String(chat.id || '');
+    const isChannel = chat.className === 'Channel' || event.isChannel;
+    const isGroup = chat.className === 'Chat' || event.isGroup;
+
+    if (isChannel && !groupId.startsWith('-100')) {
+      groupId = `-100${groupId}`;
+    } else if (isGroup && !groupId.startsWith('-')) {
+      groupId = `-${groupId}`;
+    }
+
     const groupName = chat.title || chat.username || 'Unknown Group';
 
     // Check if this group is in our monitored list
