@@ -264,6 +264,45 @@ const createClientForAccount = async (account) => {
     // Handle disconnects with auto-reconnect
     client.setParseMode('html');
 
+    // Automatically fetch and register all joined groups in the background
+    (async () => {
+      try {
+        logger.info(`🔍 Scanning joined groups for account: ${account.phone}...`);
+        const dialogs = await client.getDialogs();
+        let addedCount = 0;
+        for (const dialog of dialogs) {
+          if (dialog.isGroup || dialog.isChannel) {
+            const groupId = String(dialog.id);
+            const groupName = dialog.title || 'Unknown Group';
+
+            // Check if already exists in DB
+            const existing = await db.monitoredGroup.findFirst({
+              where: { accountId: account.id, groupId: groupId }
+            });
+
+            if (!existing) {
+              await db.monitoredGroup.create({
+                data: {
+                  accountId: account.id,
+                  groupId: groupId,
+                  groupName: groupName,
+                  isActive: true
+                }
+              });
+              addedCount++;
+            }
+          }
+        }
+        if (addedCount > 0) {
+          logger.info(`💾 Automatically registered ${addedCount} new group(s) for ${account.phone}`);
+        } else {
+          logger.info(`ℹ️ No new groups to register for ${account.phone}`);
+        }
+      } catch (dbErr) {
+        logger.warn(`Failed to auto-register groups for ${account.phone}`, { error: dbErr.message });
+      }
+    })();
+
     return client;
   } catch (err) {
     if (err.errorMessage === 'FLOOD_WAIT') {
