@@ -23,6 +23,71 @@ const activeClients = new Map();
  */
 const sleep = (seconds) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 
+// ─── Channel Forwarding Helper ──────────────────────────────────────────────────
+/**
+ * Forwards a request to the configured Telegram channel.
+ * @param {Object} request - Saved request DB object
+ */
+const forwardRequestToChannel = async (request) => {
+  try {
+    const setting = await db.systemSetting.findUnique({
+      where: { key: 'FORWARD_CHANNEL_ID' }
+    });
+    
+    const channelId = setting ? setting.value : process.env.FORWARD_CHANNEL_ID;
+    if (!channelId) {
+      logger.debug('No FORWARD_CHANNEL_ID configured. Skipping forwarding.');
+      return;
+    }
+
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) {
+      logger.warn('TELEGRAM_BOT_TOKEN not configured. Cannot forward message.');
+      return;
+    }
+
+    const usernameText = request.senderUsername ? `@${request.senderUsername}` : 'غير متوفر';
+    const profileLinkText = request.profileLink ? `<a href="${request.profileLink}">رابط الملف الشخصي</a>` : 'غير متوفر';
+    const messageLinkText = request.messageLink ? `<a href="${request.messageLink}">رابط الرسالة</a>` : 'غير متوفر';
+
+    const formattedMessage = [
+      `🔔 <b>طلب جديد مقتنص</b>`,
+      `━━━━━━━━━━━━━━━━━━`,
+      `📝 <b>الرسالة:</b>`,
+      `<i>"${request.messageText}"</i>`,
+      `━━━━━━━━━━━━━━━━━━`,
+      `👤 <b>المُرسل:</b> ${request.senderName || 'مجهول'} (${usernameText})`,
+      `👥 <b>المجموعة:</b> ${request.groupName || 'غير معروفة'}`,
+      `📁 <b>نوع الخدمة:</b> ${request.serviceType || 'غير محدد'}`,
+      `⚡ <b>الأولوية:</b> ${request.priority || 'NORMAL'}`,
+      `🔗 <b>روابط سريعة:</b>`,
+      `• ${profileLinkText}`,
+      `• ${messageLinkText}`
+    ].join('\n');
+
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: channelId,
+        text: formattedMessage,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true
+      }),
+    });
+
+    const resJson = await response.json();
+    if (!resJson.ok) {
+      logger.error('Telegram API error when forwarding request:', resJson);
+    } else {
+      logger.info(`✅ Request ${request.id} forwarded to channel ${channelId}`);
+    }
+  } catch (err) {
+    logger.error('Failed to forward request to Telegram channel', { error: err.message });
+  }
+};
+
 // ─── Message Handler ───────────────────────────────────────────────────────────
 /**
  * Processes an incoming Telegram message event.
@@ -125,6 +190,9 @@ const handleNewMessage = async (event, account, client) => {
       request,
       classification,
     });
+
+    // Forward to Telegram channel if configured
+    await forwardRequestToChannel(request);
 
     // Notify all active admin users
     const admins = await db.user.findMany({
