@@ -5,7 +5,7 @@ services:
     plan: free
     runtime: node
     rootDir: backend
-    buildCommand: npm install && npx prisma generate && npx prisma db push --accept-data-loss
+    buildCommand: npm install && npx prisma generate
     startCommand: node src/index.js
     envVars:
       - key: NODE_ENV
