@@ -85,8 +85,8 @@ const forwardRequestToChannel = async (request) => {
       });
     }
 
-    // Original message link
-    if (request.messageLink) {
+    // Original message link - only add if it is a valid URL scheme to prevent API crash
+    if (request.messageLink && (request.messageLink.startsWith('http://') || request.messageLink.startsWith('https://') || request.messageLink.startsWith('tg://'))) {
       buttons.push({
         text: '🔗 عرض الرسالة',
         url: request.messageLink
