@@ -427,7 +427,7 @@ export default function RequestsPage() {
       };
     },
     staleTime: 15000,
-    refetchInterval: 3000, // Auto-refresh requests list every 3 seconds
+    refetchInterval: 5000, // Auto-refresh requests list every 5 seconds
   });
 
   // Real-time new request

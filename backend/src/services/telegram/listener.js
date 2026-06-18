@@ -46,24 +46,50 @@ const forwardRequestToChannel = async (request) => {
       return;
     }
 
-    const usernameText = request.senderUsername ? `@${request.senderUsername}` : 'غير متوفر';
-    const profileLinkText = request.profileLink ? `<a href="${request.profileLink}">رابط الملف الشخصي</a>` : 'غير متوفر';
-    const messageLinkText = request.messageLink ? `<a href="${request.messageLink}">رابط الرسالة</a>` : 'غير متوفر';
+    // Extract phone and clean sender name
+    const phoneMatch = request.senderName ? request.senderName.match(/\(([^)]+)\)/) : null;
+    const phoneVal = request.senderPhone || (phoneMatch ? phoneMatch[1] : null);
+    const cleanSenderName = request.senderName ? request.senderName.replace(/\s*\([^)]+\)/, '') : 'مجهول';
 
-    const formattedMessage = [
-      `🔔 <b>طلب جديد مقتنص</b>`,
-      `━━━━━━━━━━━━━━━━━━`,
-      `📝 <b>الرسالة:</b>`,
-      `<i>"${request.messageText}"</i>`,
-      `━━━━━━━━━━━━━━━━━━`,
-      `👤 <b>المُرسل:</b> ${request.senderName || 'مجهول'} (${usernameText})`,
-      `👥 <b>المجموعة:</b> ${request.groupName || 'غير معروفة'}`,
-      `📁 <b>نوع الخدمة:</b> ${request.serviceType || 'غير محدد'}`,
-      `⚡ <b>الأولوية:</b> ${request.priority || 'NORMAL'}`,
-      `🔗 <b>روابط سريعة:</b>`,
-      `• ${profileLinkText}`,
-      `• ${messageLinkText}`
-    ].join('\n');
+    // Build sender line: username + phone
+    let senderLine = cleanSenderName;
+    if (request.senderUsername) {
+      senderLine += ` | @${request.senderUsername}`;
+    }
+    if (phoneVal) {
+      senderLine += ` | ${phoneVal.startsWith('+') ? '' : '+'}${phoneVal}`;
+    }
+
+    const formattedMessageLines = [
+      `<b>طلب محتمل:</b>`,
+      ``,
+      `👤 <b>المرسل:</b>`,
+      senderLine,
+      ``,
+      `📌 <b>المجموعة:</b>`,
+      request.groupName || 'غير معروف',
+      ``,
+      `📝 <b>نص الطلب:</b>`,
+      request.messageText,
+      ``,
+      `🔗 <b>رابط الرسالة:</b>`,
+      request.messageLink || 'غير متوفر',
+      ``,
+      `───`
+    ];
+
+    const formattedMessage = formattedMessageLines.join('\n');
+
+    const reply_markup = request.messageLink ? {
+      inline_keyboard: [
+        [
+          {
+            text: '🔗 عرض الرسالة',
+            url: request.messageLink
+          }
+        ]
+      ]
+    } : undefined;
 
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
     const response = await fetch(url, {
@@ -73,7 +99,8 @@ const forwardRequestToChannel = async (request) => {
         chat_id: channelId,
         text: formattedMessage,
         parse_mode: 'HTML',
-        disable_web_page_preview: true
+        disable_web_page_preview: true,
+        reply_markup
       }),
     });
 
@@ -111,8 +138,8 @@ const handleNewMessage = async (event, account, client) => {
     const groupId = String(message.chatId || '');
     if (!groupId) return;
 
-    // Prevent loop: check template format
-    if (messageText.includes('طلب جديد مقتنص') || messageText.includes('روابط سريعة:')) {
+    // Prevent loop: check template format from bot's own messages
+    if (messageText.includes('طلب محتمل:') || messageText.includes('طلب جديد') || messageText.includes('روابط سريعة:')) {
       return;
     }
 
@@ -144,10 +171,13 @@ const handleNewMessage = async (event, account, client) => {
 
     const groupName = monitoredGroup.groupName || 'Unknown Group';
 
+
+
     // Fetch sender info with a timeout to prevent hanging on Telegram API
     let senderName = 'Unknown';
     let senderUsername = null;
     let senderId = 'unknown';
+    let senderPhone = null;
 
     try {
       const sender = await Promise.race([
@@ -156,7 +186,12 @@ const handleNewMessage = async (event, account, client) => {
       ]).catch(() => null);
 
       if (sender) {
-        senderName = [sender.firstName, sender.lastName].filter(Boolean).join(' ') || sender.title || 'Unknown';
+        senderPhone = sender.phone || null;
+        let name = [sender.firstName, sender.lastName].filter(Boolean).join(' ') || sender.title || 'Unknown';
+        if (senderPhone) {
+          name += ` (${senderPhone.startsWith('+') ? '' : '+'}${senderPhone})`;
+        }
+        senderName = name;
         senderUsername = sender.username || null;
         senderId = sender.id ? String(sender.id) : 'unknown';
       } else if (message.fromId) {
@@ -195,7 +230,7 @@ const handleNewMessage = async (event, account, client) => {
     logger.info(`Classification result for msg in "${groupName}" (chat ${groupId}): isRequest=${isRequest}, confidence=${confidenceScore}, service=${serviceType}`);
 
     // Only save if it's a request (not spam/ads) with sufficient confidence
-    if (!isRequest || confidenceScore < 0.5) {
+    if (!isRequest || confidenceScore < 0.65) {
       if (isAdvertiser) {
         logger.info(`Msg in "${groupName}" skipped: classified as advertiser.`);
       } else {
@@ -204,8 +239,30 @@ const handleNewMessage = async (event, account, client) => {
       return;
     }
 
-    // Calculate expiry (24 hours from now)
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    // Deduplication: avoid duplicate requests from the same sender within the last 12 hours
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    const duplicateRequest = await db.request.findFirst({
+      where: {
+        AND: [
+          { messageText },
+          { capturedAt: { gte: twelveHoursAgo } },
+          {
+            OR: [
+              { senderId },
+              { senderPhone },
+              { senderUsername },
+            ],
+          },
+        ],
+      },
+    });
+    if (duplicateRequest) {
+      logger.info(`Skipping duplicate request from same sender in "${groupName}" captured within 12h.`);
+      return;
+    }
+
+    // Calculate expiry (48 hours from now)
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
 
     // Save to database
     let request;
@@ -216,6 +273,7 @@ const handleNewMessage = async (event, account, client) => {
           senderName,
           senderUsername,
           senderId,
+          senderPhone,
           profileLink,
           messageLink,
           groupName,
@@ -228,6 +286,7 @@ const handleNewMessage = async (event, account, client) => {
           priority,
           isAdvertiser: false,
           expiresAt,
+          accountPhone: account.phone,
         },
       });
     } catch (dbErr) {

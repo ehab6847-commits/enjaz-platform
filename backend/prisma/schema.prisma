@@ -71,6 +71,7 @@ model Request {
   senderName      String?
   senderUsername  String?
   senderId        String
+  senderPhone     String?   // Added field for sender phone number
   profileLink     String?
   messageLink     String?
   groupName       String?
@@ -96,6 +97,11 @@ model Request {
   @@index([serviceType])
   @@index([capturedAt])
   @@index([expiresAt])
+  @@index([senderId])
+  @@index([senderPhone])
+  @@index([senderUsername])
+  @@index([archivedAt])
+  @@index([senderId, messageText])
 }
 
 model TelegramAccount {
