@@ -54,10 +54,19 @@ const forwardRequestToChannel = async (request) => {
       cleanSenderName = `@${request.senderUsername}`;
     }
 
+    // Direct message link: use https://t.me/ for username, or tg://user?id= in the message text HTML anchor (safe)
+    const directMessageLink = request.senderUsername 
+      ? `https://t.me/${request.senderUsername}` 
+      : (request.senderId && request.senderId !== 'unknown' ? `tg://user?id=${request.senderId}` : null);
+
+    const nameLink = directMessageLink 
+      ? `<a href="${directMessageLink}">${cleanSenderName}</a>`
+      : cleanSenderName;
+
     // Format the message briefly to match user's screenshot exactly
     const formattedMessageLines = [
-      `👤 <b>${cleanSenderName}</b>`,
-      `المرسل : ID <code>${request.senderId}</code>`,
+      `👤 <b>${nameLink}</b>`,
+      `المرسل : ID <code>${request.senderId}</code>\n`,
       `نص الرساله :`,
       request.messageText,
       `رابط الرساله : ${request.messageLink || 'غير متوفر'}`
@@ -65,19 +74,14 @@ const forwardRequestToChannel = async (request) => {
 
     const formattedMessage = formattedMessageLines.join('\n');
 
-    // Build buttons row: [ رسالة خاصة ] and [ عرض الرسالة ] side-by-side
+    // Build buttons row: [ رسالة خاصة ] (only if public username is available) and [ عرض الرسالة ] side-by-side
     const buttons = [];
     
-    // Direct message link
+    // Direct message link - ONLY if they have a public username to prevent BUTTON_USER_INVALID crash
     if (request.senderUsername) {
       buttons.push({
         text: '📱 رسالة خاصة',
         url: `https://t.me/${request.senderUsername}`
-      });
-    } else if (request.senderId && request.senderId !== 'unknown') {
-      buttons.push({
-        text: '📱 رسالة خاصة',
-        url: `tg://user?id=${request.senderId}`
       });
     }
 
