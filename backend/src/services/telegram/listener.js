@@ -46,49 +46,51 @@ const forwardRequestToChannel = async (request) => {
       return;
     }
 
-    // Extract phone and clean sender name
+    // Clean sender name or default to username
     const phoneMatch = request.senderName ? request.senderName.match(/\(([^)]+)\)/) : null;
     const phoneVal = request.senderPhone || (phoneMatch ? phoneMatch[1] : null);
-    const cleanSenderName = request.senderName ? request.senderName.replace(/\s*\([^)]+\)/, '') : 'مجهول';
-
-    // Build sender line: username + phone
-    let senderLine = cleanSenderName;
+    let cleanSenderName = request.senderName ? request.senderName.replace(/\s*\([^)]+\)/, '') : 'مجهول';
     if (request.senderUsername) {
-      senderLine += ` | @${request.senderUsername}`;
-    }
-    if (phoneVal) {
-      senderLine += ` | ${phoneVal.startsWith('+') ? '' : '+'}${phoneVal}`;
+      cleanSenderName = `@${request.senderUsername}`;
     }
 
+    // Format the message briefly to match user's screenshot exactly
     const formattedMessageLines = [
-      `<b>طلب محتمل:</b>`,
-      ``,
-      `👤 <b>المرسل:</b>`,
-      senderLine,
-      ``,
-      `📌 <b>المجموعة:</b>`,
-      request.groupName || 'غير معروف',
-      ``,
-      `📝 <b>نص الطلب:</b>`,
+      `👤 <b>${cleanSenderName}</b>`,
+      `المرسل : ID <code>${request.senderId}</code>`,
+      `نص الرساله :`,
       request.messageText,
-      ``,
-      `🔗 <b>رابط الرسالة:</b>`,
-      request.messageLink || 'غير متوفر',
-      ``,
-      `───`
+      `رابط الرساله : ${request.messageLink || 'غير متوفر'}`
     ];
 
     const formattedMessage = formattedMessageLines.join('\n');
 
-    const reply_markup = request.messageLink ? {
-      inline_keyboard: [
-        [
-          {
-            text: '🔗 عرض الرسالة',
-            url: request.messageLink
-          }
-        ]
-      ]
+    // Build buttons row: [ رسالة خاصة ] and [ عرض الرسالة ] side-by-side
+    const buttons = [];
+    
+    // Direct message link
+    if (request.senderUsername) {
+      buttons.push({
+        text: '📱 رسالة خاصة',
+        url: `https://t.me/${request.senderUsername}`
+      });
+    } else if (request.senderId && request.senderId !== 'unknown') {
+      buttons.push({
+        text: '📱 رسالة خاصة',
+        url: `tg://user?id=${request.senderId}`
+      });
+    }
+
+    // Original message link
+    if (request.messageLink) {
+      buttons.push({
+        text: '🔗 عرض الرسالة',
+        url: request.messageLink
+      });
+    }
+
+    const reply_markup = buttons.length > 0 ? {
+      inline_keyboard: [buttons]
     } : undefined;
 
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
@@ -115,6 +117,63 @@ const forwardRequestToChannel = async (request) => {
   }
 };
 
+/**
+ * Parses a forwarded message format to extract original request details if present.
+ * @param {string} text - Raw message text
+ * @returns {Object|null} Parsed details or null
+ */
+const parseForwardedFormat = (text) => {
+  if (!text.includes('نص الرساله :')) return null;
+
+  try {
+    const lines = text.split('\n');
+    let senderName = null;
+    let senderId = null;
+    let messageText = '';
+    let messageLink = null;
+
+    // Find sender name (line starting with 👤)
+    const senderLine = lines.find(l => l.includes('👤'));
+    if (senderLine) {
+      senderName = senderLine.replace('👤', '').trim();
+    }
+
+    // Find sender ID (line containing ID)
+    const idLine = lines.find(l => l.includes('المرسل') && l.includes('ID'));
+    if (idLine) {
+      const match = idLine.match(/\d+/);
+      if (match) {
+        senderId = match[0];
+      }
+    }
+
+    // Find message text and link
+    const textIndex = text.indexOf('نص الرساله :');
+    const linkIndex = text.indexOf('رابط الرساله :');
+
+    if (textIndex !== -1) {
+      if (linkIndex !== -1 && linkIndex > textIndex) {
+        messageText = text.substring(textIndex + 'نص الرساله :'.length, linkIndex).trim();
+        messageLink = text.substring(linkIndex + 'رابط الرساله :'.length).trim();
+      } else {
+        messageText = text.substring(textIndex + 'نص الرساله :'.length).trim();
+      }
+    }
+
+    if (messageText) {
+      return {
+        senderName,
+        senderId: senderId || 'unknown',
+        messageText,
+        messageLink
+      };
+    }
+  } catch (err) {
+    logger.debug('Error parsing forwarded format:', err.message);
+  }
+  return null;
+};
+
 // ─── Message Handler ───────────────────────────────────────────────────────────
 /**
  * Processes an incoming Telegram message event.
@@ -132,14 +191,14 @@ const handleNewMessage = async (event, account, client) => {
     // Skip empty, service messages, or outgoing messages
     if (!message || !message.message || message.out) return;
 
-    const messageText = message.message.trim();
-    if (!messageText || messageText.length < 5) return;
+    const rawMessageText = message.message.trim();
+    if (!rawMessageText || rawMessageText.length < 5) return;
 
     const groupId = String(message.chatId || '');
     if (!groupId) return;
 
     // Prevent loop: check template format from bot's own messages
-    if (messageText.includes('طلب محتمل:') || messageText.includes('طلب جديد') || messageText.includes('روابط سريعة:')) {
+    if (rawMessageText.includes('طلب محتمل:') || rawMessageText.includes('طلب جديد') || rawMessageText.includes('روابط سريعة:')) {
       return;
     }
 
@@ -157,8 +216,6 @@ const handleNewMessage = async (event, account, client) => {
       }
     }
 
-    logger.info(`Incoming msg from ${account.phone} (chat ${groupId}): "${messageText.substring(0, 50)}..."`);
-
     // Check if this group is in our monitored list in DB first (no Telegram API call)
     const monitoredGroup = await db.monitoredGroup.findFirst({
       where: { groupId, accountId: account.id, isActive: true },
@@ -171,53 +228,74 @@ const handleNewMessage = async (event, account, client) => {
 
     const groupName = monitoredGroup.groupName || 'Unknown Group';
 
+    logger.info(`Incoming msg from ${account.phone} (chat ${groupId}): "${rawMessageText.substring(0, 50)}..."`);
 
+    // Parse forwarded format if present (e.g. from S_boot bot forwards)
+    const parsedForward = parseForwardedFormat(rawMessageText);
+    const messageText = parsedForward ? parsedForward.messageText : rawMessageText;
+
+    if (!messageText || messageText.length < 5) return;
 
     // Fetch sender info with a timeout to prevent hanging on Telegram API
-    let senderName = 'Unknown';
+    let senderName = parsedForward ? parsedForward.senderName : 'Unknown';
     let senderUsername = null;
-    let senderId = 'unknown';
+    let senderId = parsedForward ? parsedForward.senderId : 'unknown';
     let senderPhone = null;
 
-    try {
-      const sender = await Promise.race([
-        event.getSender(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
-      ]).catch(() => null);
-
-      if (sender) {
-        senderPhone = sender.phone || null;
-        let name = [sender.firstName, sender.lastName].filter(Boolean).join(' ') || sender.title || 'Unknown';
-        if (senderPhone) {
-          name += ` (${senderPhone.startsWith('+') ? '' : '+'}${senderPhone})`;
-        }
-        senderName = name;
-        senderUsername = sender.username || null;
-        senderId = sender.id ? String(sender.id) : 'unknown';
-      } else if (message.fromId) {
-        senderId = String(message.fromId.userId || message.fromId.channelId || 'unknown');
+    // Extract username from parsed name if it contains @
+    if (parsedForward && parsedForward.senderName) {
+      const usernameMatch = parsedForward.senderName.match(/@(\w+)/);
+      if (usernameMatch) {
+        senderUsername = usernameMatch[1];
       }
-    } catch (senderErr) {
-      logger.debug(`Could not fetch sender info for message in ${groupName}: ${senderErr.message}`);
+    }
+
+    if (!parsedForward) {
+      try {
+        const sender = await Promise.race([
+          event.getSender(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+        ]).catch(() => null);
+
+        if (sender) {
+          senderPhone = sender.phone || null;
+          let name = [sender.firstName, sender.lastName].filter(Boolean).join(' ') || sender.title || 'Unknown';
+          if (senderPhone) {
+            name += ` (${senderPhone.startsWith('+') ? '' : '+'}${senderPhone})`;
+          }
+          senderName = name;
+          senderUsername = sender.username || null;
+          senderId = sender.id ? String(sender.id) : 'unknown';
+        } else if (message.fromId) {
+          senderId = String(message.fromId.userId || message.fromId.channelId || 'unknown');
+        }
+      } catch (senderErr) {
+        logger.debug(`Could not fetch sender info for message in ${groupName}: ${senderErr.message}`);
+      }
     }
 
     // Build links
     const profileLink = senderUsername ? `https://t.me/${senderUsername}` : null;
     
-    let chatUsername = null;
-    try {
-      const chat = await Promise.race([
-        event.getChat(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 1500))
-      ]).catch(() => null);
-      if (chat) {
-        chatUsername = chat.username || null;
-      }
-    } catch (e) {}
+    let messageLink = null;
+    if (parsedForward) {
+      messageLink = parsedForward.messageLink;
+    } else {
+      let chatUsername = null;
+      try {
+        const chat = await Promise.race([
+          event.getChat(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 1500))
+        ]).catch(() => null);
+        if (chat) {
+          chatUsername = chat.username || null;
+        }
+      } catch (e) {}
 
-    const messageLink = chatUsername && message.id
-      ? `https://t.me/${chatUsername}/${message.id}`
-      : null;
+      messageLink = chatUsername && message.id
+        ? `https://t.me/${chatUsername}/${message.id}`
+        : null;
+    }
 
     // Classify the message
     const classification = await classifyMessage(messageText, {
