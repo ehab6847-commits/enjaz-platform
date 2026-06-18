@@ -527,35 +527,46 @@ const removeListener = async (accountId) => {
   }
 };
 
-// ─── Health Check ──────────────────────────────────────────────────────────────
-/**
- * Checks the health of all active clients and reconnects if needed.
- * @returns {Promise<Object>} Health report
- */
 const checkListenersHealth = async () => {
   const report = { healthy: 0, unhealthy: 0, reconnected: 0 };
 
   for (const [accountId, client] of activeClients.entries()) {
+    let isHealthy = false;
     try {
-      const isConnected = client.connected;
-      if (!isConnected) {
-        report.unhealthy++;
+      if (client.connected) {
+        // Ping Telegram with a fast query to check if connection is active and wake it up (keep-alive)
+        await Promise.race([
+          client.getMe(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Ping Timeout')), 4000))
+        ]);
+        isHealthy = true;
+      }
+    } catch (pingErr) {
+      logger.warn(`Stale Telegram client detected for account ${accountId}: ${pingErr.message}`);
+    }
 
-        // Try to reconnect
+    if (!isHealthy) {
+      report.unhealthy++;
+      // Try to disconnect and reconnect
+      try {
         try {
-          await client.connect();
+          await client.disconnect();
+        } catch (e) {}
+        await client.connect();
+        
+        if (await client.isUserAuthorized()) {
           report.reconnected++;
-          logger.info(`Reconnected Telegram client`, { accountId });
-        } catch (reconnectErr) {
-          logger.error(`Failed to reconnect client`, { accountId, error: reconnectErr.message });
+          logger.info(`✅ Successfully reconnected and re-authorized Telegram client for account ${accountId}`);
+        } else {
+          logger.warn(`Account ${accountId} is not authorized after reconnect.`);
           activeClients.delete(accountId);
         }
-      } else {
-        report.healthy++;
+      } catch (reconnectErr) {
+        logger.error(`Failed to reconnect client for account ${accountId}:`, { error: reconnectErr.message });
+        activeClients.delete(accountId);
       }
-    } catch (err) {
-      report.unhealthy++;
-      logger.error('Error checking client health', { accountId, error: err.message });
+    } else {
+      report.healthy++;
     }
   }
 
