@@ -66,7 +66,7 @@ const INTENT_KEYWORDS = [
   'مين يحل', 'مين يسوي', 'مين يقدر', 'مين يعرف يسوي', 'شخص يحل',
   'مطلوب', 'مطلب', 'مساعدة', 'مساعده', 'يساعدني', 'ساعدوني',
   'فزعة', 'فزعه', 'فزعتكم', 'يحللي', 'يسويلي', 'يجهزلي', 'يجهز لي',
-  'ممكن احد', 'ابحث عن', 'ابحث عن شخص', 'مطلوب شخص', 'مطلوب حل',
+  'ممكن احد', 'اببحث عن', 'ابحث عن شخص', 'مطلوب شخص', 'مطلوب حل',
   'يحل', 'يسوي', 'يكتب', 'يبرمج', 'يصمم', 'يترجم', 'يساعد',
   'مين شاطر', 'مين فاهم', 'مين يعرف', 'مين يقدر', 'مين يترجم', 'مين يصمم', 'مين يبرمج',
   'عندي', 'مين عنده', 'تكفون', 'تكفى',
@@ -78,6 +78,14 @@ const INTENT_KEYWORDS = [
   'حد يعرف', 'أحد يسوي', 'احد يسوي', 'حد يسوي', 'حد يقدر',
   'شخص ثقه', 'شخص ثقة', 'شخص موثوق', 'مختص', 'متخصص', 'يفهم',
   'غبت عن', 'صار عندي حرمان', 'حرمان', 'والدفع للمكافاه', 'والدفع للمكافأة',
+  // Newly requested intent expressions
+  'ابي شخص ثقه', 'أبي شخص ثقة', 'ابي مختص شاطر', 'أبي مختص شاطر',
+  'ابي حد يسوي', 'أبي حد يسوي', 'من يحل', 'من يسوي', 'من يعرف',
+  'من يعرف يصمم', 'من يعرف يحل', 'مين يعرف يصمم', 'مين يفهم',
+  'من يفهم', 'حد يعرف يسوي', 'حد يعرف يحل', 'أحد يعرف يسوي',
+  'ابي حد يحل', 'أبي حد يحل', 'ابغى حد يسوي', 'ابي حد يفهم', 'أبي حد يفهم',
+  'الدفع بعد الدرجه', 'الدفع بعد الدرجة', 'بعد الدرجه', 'بعد الدرجة',
+  'للراتب', 'للمكافاه', 'للمكافأة', 'مختص الحين', 'ابي حد يترجم', 'من يترجم',
   'need help', 'need someone', 'looking for', 'can someone', 'anyone can',
   'do my', 'solve my', 'help me with', 'anyone knows'
 ];
@@ -101,7 +109,7 @@ const ACADEMIC_KEYWORDS = [
   'متطلب', 'متطلبات', 'معادلة', 'معادله', 'وثيقة', 'وثيقه', 'شهادة', 'شهاده',
   'تخرج', 'خريج', 'خريجة', 'شعب',
   // Sick leave / Medical excuses / Documents
-  'سكليف', 'سيكليف', 'سكاليف', 'سكالف', 'سكيليف', 'sick leave',
+  'سكليف', 'سيكليف', 'skleave', 'سكاليف', 'سكالف', 'سكيليف', 'sick leave',
   'عذر طبي', 'عذر', 'اعذار', 'أعذار', 'عذر ورقي', 'عذر مرضي',
   'تقرير طبي', 'تقرير مرضي', 'شهادة مرضية', 'شهاده مرضيه',
   'اجازة مرضية', 'إجازة مرضية', 'اجازه مرضيه', 'إجازه مرضيه',
@@ -114,6 +122,20 @@ const ACADEMIC_KEYWORDS = [
   'وورد', 'word', 'اكسل', 'excel', 'بوربوينت', 'powerpoint',
   'انفوجرافيك', 'infographic', 'لوقو', 'logo', 'شعار', 'بنر', 'banner',
   'ملف pdf', 'pdf',
+  // Newly requested Academic & Specialized Keywords
+  'ماث', 'math', 'معادلات', 'تكامل وتفاضل', 'تكامل', 'تفاضل', 'محاسبة مالية', 'دراسة جدوى', 'دراسة جدوي', 'فيزياء',
+  'خرائط ذهنيه', 'خرائط ذهنية', 'خرائط مفاهيم', 'هيكل تنظيمي', 'فيديو بالذكاء الاصطناعي', 'ذكاء اصطناعي', 'ذكاء إصطناعي',
+  'فيديو متحرك', 'تعليق صوتي', 'فيديو انمي', 'موشن جرافيك', 'مناهج البحث', 'بحث علمي', 'مراجع APA 7', 'apa 7', 'apa',
+  'تلخيص فصل', 'تلخيص مقرر', 'تلخيص شبتر', 'تلخيص شباتر', 'تلخيص', 'ملخص', 'رسم هندسي', 'جدول مقارنه', 'جدول مقارنة',
+  'سيرة ذاتية ATS', 'ats', 'سيره ذاتيه ats', 'تدريب نهائي', 'تدريب تعاوني', 'تدريب تطبيقي', 'تدريب ميداني',
+  'طفوله مبكره', 'طفولة مبكرة', 'رياض الأطفال', 'رياض الاطفال', 'احياء', 'الأحياء', 'أحياء', 'بروبوزل', 'proposal',
+  'مقترح بحث', 'خطة بحث', 'خطه بحث', 'ريبورت', 'report', 'مطويه', 'مطوية', 'برشور', 'بروشور', 'ورقه علمية', 'ورقة علمية',
+  'ملصق علمي', 'ملصق علمى', 'بوستر', 'poster', 'ترجمة ملف', 'ترجمة شابتر', 'ترجمة شابترز', 'ترجمة جمله بجمله',
+  'ترجمة جملة بجملة', 'سلايدات', 'شرائح', 'تعبئة البيانات', 'تعبئة بيانات', 'تعديل ملف', 'تحليل احصائي', 'تحليل إحصائي',
+  'spss', 'اس بي اس اس', 'باكت تريسر', 'packet tracer', 'تصميم جرافيك', 'نظم معلومات', 'بحث فقهي', 'توثيق المراجع',
+  'الحواشي', 'الهامش', 'الهوامش', 'لابات', 'لاب', 'بايثون', 'python', 'تطبيق', 'موقع الكتروني', 'موقع إلكتروني',
+  'متجر الكتروني', 'متجر إلكتروني', 'موقع بالويب', 'الويب', 'تصميم تخرج', 'تكليف جماعي', 'اسئلة الفصل', 'أسئلة الفصل', 'اسئله الفصل', 'أسئله الفصل', 'اسئله', 'أسئله',
+  'تفريغ صوتي', 'تفريغ صوتى', 'تعبير باللغة الانجليزية', 'تعبير بالانجليزي',
   // English
   'assignment', 'homework', 'project', 'report', 'lab', 'quiz',
   'exam', 'presentation', 'thesis', 'research', 'essay', 'calculus', 'math'
@@ -152,38 +174,90 @@ const findMatchingKeywords = (text, keywords) => {
 const detectServiceType = (text) => {
   const lowerText = text.toLowerCase();
 
-  // Sick leave / Medical must be checked FIRST (highest priority for the user)
+  // 1. Sick leave / Medical (highest priority)
   if (lowerText.includes('سكليف') || lowerText.includes('سكاليف') || lowerText.includes('سكالف') || lowerText.includes('سيكليف') || lowerText.includes('سكيليف') || lowerText.includes('sick leave')) {
     return 'سكليف';
-  } else if (lowerText.includes('عذر طبي') || lowerText.includes('عذر مرضي') || lowerText.includes('عذر ورقي') || lowerText.includes('اجازة مرضية') || lowerText.includes('إجازة مرضية') || lowerText.includes('شهادة مرضية') || lowerText.includes('مشهد مراجعه') || lowerText.includes('مشهد مراجعة') || lowerText.includes('وصفة طبية') || lowerText.includes('وصفه طبيه') || lowerText.includes('مرافق مريض') || lowerText.includes('تقرير طبي') || lowerText.includes('شهادة صحية') || lowerText.includes('فحص طبي') || lowerText.includes('موعد مستشفى')) {
+  }
+  if (lowerText.includes('عذر طبي') || lowerText.includes('عذر مرضي') || lowerText.includes('عذر ورقي') || lowerText.includes('اجازة مرضية') || lowerText.includes('إجازة مرضية') || lowerText.includes('شهادة مرضية') || lowerText.includes('مشهد مراجعه') || lowerText.includes('مشهد مراجعة') || lowerText.includes('وصفة طبية') || lowerText.includes('وصفه طبيه') || lowerText.includes('مرافق مريض') || lowerText.includes('تقرير طبي') || lowerText.includes('شهادة صحية') || lowerText.includes('فحص طبي') || lowerText.includes('موعد مستشفى')) {
     return 'طب';
-  } else if (lowerText.includes('برمجة') || lowerText.includes('code') || lowerText.includes('python') || lowerText.includes('java') || lowerText.includes('حاسب')) {
-    return 'برمجة';
-  } else if (lowerText.includes('بحث') || lowerText.includes('بحوث') || lowerText.includes('research')) {
-    return 'بحث';
-  } else if (lowerText.includes('cv') || lowerText.includes('سيرة ذاتية')) {
-    return 'CV';
-  } else if (lowerText.includes('تدريب')) {
+  }
+
+  // 2. Accounting & Finance (check before programming to avoid 'محاسب' matching 'حاسب')
+  if (lowerText.includes('محاسبة') || lowerText.includes('محاسبه') || lowerText.includes('تكاليف') || lowerText.includes('جدوى') || lowerText.includes('جدوي') || lowerText.includes('اقتصاد') || lowerText.includes('مالية')) {
+    return 'محاسبة';
+  }
+
+  // 3. Training (check before programming to avoid 'تطبيقي' matching 'تطبيق')
+  if (lowerText.includes('تدريب') || lowerText.includes('تعاوني') || lowerText.includes('ميداني') || lowerText.includes('تطبيقي')) {
     return 'تدريب';
-  } else if (lowerText.includes('كانفا') || lowerText.includes('canva') || lowerText.includes('فوتوشوب') || lowerText.includes('photoshop') || lowerText.includes('فيتشوب') || lowerText.includes('انفوجرافيك')) {
+  }
+
+  // 4. Programming & Tech
+  if (lowerText.includes('برمجة') || lowerText.includes('برمجه') || lowerText.includes('code') || lowerText.includes('python') || lowerText.includes('java') || 
+     (lowerText.includes('حاسب') && !lowerText.includes('محاسب')) || 
+     lowerText.includes('باكت تريسر') || lowerText.includes('packet tracer') || lowerText.includes('ويب') || 
+     (lowerText.includes('تطبيق') && !lowerText.includes('تطبيقي')) || 
+     lowerText.includes('موقع الكتروني') || lowerText.includes('موقع إلكتروني') || lowerText.includes('متجر الكتروني') || lowerText.includes('متجر إلكتروني') || lowerText.includes('نظم معلومات')) {
+    return 'برمجة';
+  }
+
+  // 5. Research
+  if (lowerText.includes('بحث') || lowerText.includes('بحوث') || lowerText.includes('research') || lowerText.includes('مناهج البحث') || lowerText.includes('بروبوزل') || lowerText.includes('proposal') || lowerText.includes('مقترح بحث') || lowerText.includes('خطة بحث') || lowerText.includes('خطه بحث') || lowerText.includes('ورقه علمية') || lowerText.includes('ورقة علمية') || lowerText.includes('ملصق علمي') || lowerText.includes('بوستر') || lowerText.includes('poster')) {
+    return 'بحث';
+  }
+
+  // 6. CV / ATS
+  if (lowerText.includes('cv') || lowerText.includes('سيرة ذاتية') || lowerText.includes('ats') || lowerText.includes('سيره ذاتيه')) {
+    return 'CV';
+  }
+
+  // 7. Design & Visuals
+  if (lowerText.includes('كانفا') || lowerText.includes('canva') || lowerText.includes('فوتوشوب') || lowerText.includes('photoshop') || lowerText.includes('فيتشوب') || lowerText.includes('انفوجرافيك') || lowerText.includes('تصميم جرافيك') || lowerText.includes('مطويه') || lowerText.includes('مطوية') || lowerText.includes('برشور') || lowerText.includes('بروشور') || lowerText.includes('لوقو') || lowerText.includes('logo') || lowerText.includes('شعار') || lowerText.includes('بنر') || lowerText.includes('خرائط ذهنيه') || lowerText.includes('خرائط ذهنية') || lowerText.includes('خرائط مفاهيم') || lowerText.includes('هيكل تنظيمي') || lowerText.includes('فيديو') || lowerText.includes('موشن جرافيك') || lowerText.includes('انمي') || lowerText.includes('موشن') || lowerText.includes('تعليق صوتي')) {
     return 'تصميم';
-  } else if (lowerText.includes('تصميم') || lowerText.includes('design') || lowerText.includes('لوقو') || lowerText.includes('logo') || lowerText.includes('شعار') || lowerText.includes('بنر')) {
+  }
+
+  // 8. Design fallback
+  if (lowerText.includes('تصميم') || lowerText.includes('design')) {
     return 'تصميم';
-  } else if (lowerText.includes('تقرير') || lowerText.includes('report') || lowerText.includes('تقارير')) {
+  }
+
+  // 9. Reports
+  if (lowerText.includes('تقرير') || lowerText.includes('report') || lowerText.includes('تقارير') || lowerText.includes('ريبورت')) {
     return 'تقارير';
-  } else if (lowerText.includes('مشروع') || lowerText.includes('project') || lowerText.includes('بروجكت') || lowerText.includes('مشروع تخرج')) {
+  }
+
+  // 10. Projects
+  if (lowerText.includes('مشروع') || lowerText.includes('project') || lowerText.includes('بروجكت') || lowerText.includes('مشروع تخرج')) {
     return 'مشاريع';
-  } else if (lowerText.includes('واجب') || lowerText.includes('تكليف') || lowerText.includes('assignment') || lowerText.includes('homework')) {
+  }
+
+  // 11. Homework / General tasks
+  if (lowerText.includes('واجب') || lowerText.includes('تكليف') || lowerText.includes('assignment') || lowerText.includes('homework') || lowerText.includes('تفريغ') || lowerText.includes('تعديل ملف') || lowerText.includes('تعبئة') || lowerText.includes('اسئلة الفصل') || lowerText.includes('أسئلة الفصل') || lowerText.includes('اسئله الفصل') || lowerText.includes('أسئله الفصل') || lowerText.includes('اسئله') || lowerText.includes('أسئله')) {
     return 'واجبات';
-  } else if (lowerText.includes('اختبار') || lowerText.includes('كويز') || lowerText.includes('فاينل') || lowerText.includes('ميد') || lowerText.includes('exam') || lowerText.includes('quiz') || lowerText.includes('امتحان')) {
+  }
+
+  // 12. Exams & Quizzes
+  if (lowerText.includes('اختبار') || lowerText.includes('كويز') || lowerText.includes('فاينل') || lowerText.includes('ميد') || lowerText.includes('exam') || lowerText.includes('quiz') || lowerText.includes('امتحان')) {
     return 'اختبارات';
-  } else if (lowerText.includes('بوربوينت') || lowerText.includes('عرض تقديمي') || lowerText.includes('برزنتيشن') || lowerText.includes('presentation') || lowerText.includes('عرض')) {
+  }
+
+  // 13. Presentations
+  if (lowerText.includes('بوربوينت') || lowerText.includes('عرض تقديمي') || lowerText.includes('برزنتيشن') || lowerText.includes('presentation') || lowerText.includes('عرض') || lowerText.includes('سلايدات') || lowerText.includes('شرائح')) {
     return 'عروض';
-  } else if (lowerText.includes('رياضيات') || lowerText.includes('math') || lowerText.includes('calculus') || lowerText.includes('حسبان') || lowerText.includes('احصاء')) {
+  }
+
+  // 14. Mathematics
+  if (lowerText.includes('رياضيات') || lowerText.includes('math') || lowerText.includes('calculus') || lowerText.includes('حسبان') || lowerText.includes('احصاء') || lowerText.includes('إحصاء') || lowerText.includes('spss') || lowerText.includes('ماث') || lowerText.includes('معادلات') || lowerText.includes('تكامل') || lowerText.includes('تفاضل') || lowerText.includes('جبر') || lowerText.includes('رسم هندسي')) {
     return 'رياضيات';
-  } else if (lowerText.includes('ترجمة') || lowerText.includes('translation')) {
+  }
+
+  // 15. Translation
+  if (lowerText.includes('ترجمة') || lowerText.includes('translation') || lowerText.includes('تعبير باللغة الانجليزية') || lowerText.includes('تعبير بالانجليزي')) {
     return 'ترجمة';
-  } else if (lowerText.includes('وورد') || lowerText.includes('word') || lowerText.includes('اكسل') || lowerText.includes('excel')) {
+  }
+
+  // 16. Word / Excel
+  if (lowerText.includes('وورد') || lowerText.includes('word') || lowerText.includes('اكسل') || lowerText.includes('excel')) {
     return 'واجبات';
   }
 
@@ -197,27 +271,35 @@ const detectServiceType = (text) => {
  * @returns {Object} Classification result
  */
 const keywordFallback = (messageText) => {
-  const matchedAdvertiserKws = findMatchingKeywords(messageText, ADVERTISER_KEYWORDS);
-  const matchedIntentKws = findMatchingKeywords(messageText, INTENT_KEYWORDS);
-  const matchedAcademicKws = findMatchingKeywords(messageText, ACADEMIC_KEYWORDS);
+  const trimmedText = messageText.trim();
+  const matchedAdvertiserKws = findMatchingKeywords(trimmedText, ADVERTISER_KEYWORDS);
+  const matchedIntentKws = findMatchingKeywords(trimmedText, INTENT_KEYWORDS);
+  const matchedAcademicKws = findMatchingKeywords(trimmedText, ACADEMIC_KEYWORDS);
 
   const isAdvertiser = matchedAdvertiserKws.length >= 2; // Need at least 2 ad keywords
-  // Must have intent + academic topic, and NOT be an advertiser
-  const isRequest = matchedIntentKws.length > 0 && matchedAcademicKws.length > 0 && !isAdvertiser;
 
-  const serviceType = isRequest ? detectServiceType(messageText) : null;
+  // Smart student posting detection:
+  // 1. Classic case: has intent (e.g. ابي, احتاج) AND academic topic (e.g. واجب, ماث)
+  // 2. Noun-first case: starts with a request noun (e.g. واجب محاسبة, تكليف فيزياء) and has academic keywords
+  const startsWithRequestNoun = /^(واجب|تكليف|بحث|مشروع|بروجكت|تقرير|سيرة|سيره|ترجمة|ترجمه|تلخيص|عذر|سكليف|سكاليف|سيكليف|لاب|كويز|رسم|سلايدات|تفريغ|تصميم|حل|مطلوب)\s+/i.test(trimmedText);
+  
+  const hasIntentAndAcademic = matchedIntentKws.length > 0 && matchedAcademicKws.length > 0;
+  
+  const isRequest = (hasIntentAndAcademic || (startsWithRequestNoun && matchedAcademicKws.length > 0)) && !isAdvertiser;
+
+  const serviceType = isRequest ? detectServiceType(trimmedText) : null;
 
   // Priority detection
   let priority = 'NORMAL';
-  if (findMatchingKeywords(messageText, URGENT_KEYWORDS).length > 0) {
+  if (findMatchingKeywords(trimmedText, URGENT_KEYWORDS).length > 0) {
     priority = 'URGENT';
-  } else if (findMatchingKeywords(messageText, LOW_PRIORITY_KEYWORDS).length > 0) {
+  } else if (findMatchingKeywords(trimmedText, LOW_PRIORITY_KEYWORDS).length > 0) {
     priority = 'LOW';
   }
 
   const allMatchedKeywords = [...matchedIntentKws, ...matchedAcademicKws].slice(0, 10);
   const confidenceScore = isRequest
-    ? Math.min(0.5 + (matchedIntentKws.length * 0.1) + (matchedAcademicKws.length * 0.08), 0.85)
+    ? Math.min(0.5 + (matchedIntentKws.length * 0.1) + (matchedAcademicKws.length * 0.08) + (startsWithRequestNoun ? 0.15 : 0), 0.85)
     : isAdvertiser
     ? 0.9
     : 0.1;
