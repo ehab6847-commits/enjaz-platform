@@ -49,6 +49,14 @@ const ADVERTISER_KEYWORDS = [
   'خصومات', 'تخفيضات', 'للحجز', 'للطلب تواصل', 'واتساب',
   'فريق متخصص', 'فريق أكاديمي', 'خدمة مميزة', 'جودة عالية',
   'نضمن لكم', 'ضمان النجاح', 'متخصصون في', 'نقدم لكم',
+  // Advertiser patterns for sick leave / medical services
+  'نسوي سكاليف', 'نسوي سكليف', 'نوفر سكاليف', 'نوفر سكليف',
+  'نسوي اعذار', 'نسوي أعذار', 'نوفر اعذار', 'نوفر أعذار',
+  'نسوي تقارير طبية', 'نوفر تقارير طبية', 'نسوي عذر طبي',
+  'عندنا سكاليف', 'عندنا سكليف', 'متوفر سكاليف', 'متوفر سكليف',
+  'لعمل سكليف', 'سكاليف بسعر', 'سكليف بسعر', 'سكاليف مضمون',
+  'سكليف مضمون', 'اعذار مضمونه', 'أعذار مضمونة',
+  'نسوي لك', 'نجهز لك', 'نوفر لك', 'نعمل لك',
 ];
 
 // ─── Intent Keywords (person ASKING for help) ─────────────────────────────────
@@ -66,16 +74,21 @@ const INTENT_KEYWORDS = [
   'سؤال', 'سوال', 'اسال', 'أسأل', 'استفسر', 'أسئلة', 'اسئلة',
   'احد يعرف', 'أحد يعرف', 'احد عنده', 'أحد عنده', 'مين قد', 'مين جرب',
   'هل في', 'هل فيه', 'من يعرف', 'من عنده', 'يفيدني', 'افيدوني', 'أفيدوني',
+  // Sick leave / medical specific intent
+  'حد يعرف', 'أحد يسوي', 'احد يسوي', 'حد يسوي', 'حد يقدر',
+  'شخص ثقه', 'شخص ثقة', 'شخص موثوق', 'مختص', 'متخصص', 'يفهم',
+  'غبت عن', 'صار عندي حرمان', 'حرمان', 'والدفع للمكافاه', 'والدفع للمكافأة',
   'need help', 'need someone', 'looking for', 'can someone', 'anyone can',
   'do my', 'solve my', 'help me with', 'anyone knows'
 ];
 
-// ─── Academic Subject Keywords ────────────────────────────────────────────────
+// ─── Academic & Service Subject Keywords ──────────────────────────────────────
 const ACADEMIC_KEYWORDS = [
-  'واجب', 'تكليف', 'بحث', 'مشروع', 'بروجكت', 'تقرير', 'سكليف', 'سيكليف',
+  // Academic tasks
+  'واجب', 'تكليف', 'بحث', 'مشروع', 'بروجكت', 'تقرير',
   'برزنتيشن', 'بوربوينت', 'عرض تقديمي', 'كويز', 'اختبار', 'فاينل',
   'ميد', 'لاب', 'برمجة', 'cv', 'سيرة ذاتية', 'سيره ذاتيه', 'ترجمة', 'تصميم',
-  'رياضيات', 'تدريب تعاوني', 'تدريب ميداني', 'عذر طبي', 'تقرير طبي',
+  'رياضيات', 'تدريب تعاوني', 'تدريب ميداني',
   'مشروع تخرج', 'حل مادة', 'حل ماده', 'مادة', 'ماده', 'فيزياء', 'كيمياء',
   'احصاء', 'إحصاء', 'حسبان', 'جبر', 'حاسب', 'شبكات', 'قواعد بيانات', 'ويب',
   'جافا', 'بايثون', 'قانون', 'ادارة', 'محاسبة', 'اقتصاد', 'مالية',
@@ -87,6 +100,21 @@ const ACADEMIC_KEYWORDS = [
   'محاضرة', 'محاضره', 'محاضرات', 'تمهير', 'شروط', 'شروط التحويل', 'شروط القبول',
   'متطلب', 'متطلبات', 'معادلة', 'معادله', 'وثيقة', 'وثيقه', 'شهادة', 'شهاده',
   'تخرج', 'خريج', 'خريجة', 'شعب',
+  // Sick leave / Medical excuses / Documents
+  'سكليف', 'سيكليف', 'سكاليف', 'سكالف', 'سكيليف', 'sick leave',
+  'عذر طبي', 'عذر', 'اعذار', 'أعذار', 'عذر ورقي', 'عذر مرضي',
+  'تقرير طبي', 'تقرير مرضي', 'شهادة مرضية', 'شهاده مرضيه',
+  'اجازة مرضية', 'إجازة مرضية', 'اجازه مرضيه', 'إجازه مرضيه',
+  'مشهد مراجعه', 'مشهد مراجعة', 'وصفة طبية', 'وصفه طبيه',
+  'موعد مستشفى', 'مستشفى حكومي', 'مستشفى خاص', 'مختم',
+  'مرافق مريض', 'مراجعة طبية', 'مراجعه طبيه',
+  'شهادة صحية', 'شهاده صحيه', 'فحص طبي',
+  // Design tools
+  'كانفا', 'canva', 'فوتوشوب', 'photoshop', 'فيتشوب',
+  'وورد', 'word', 'اكسل', 'excel', 'بوربوينت', 'powerpoint',
+  'انفوجرافيك', 'infographic', 'لوقو', 'logo', 'شعار', 'بنر', 'banner',
+  'ملف pdf', 'pdf',
+  // English
   'assignment', 'homework', 'project', 'report', 'lab', 'quiz',
   'exam', 'presentation', 'thesis', 'research', 'essay', 'calculus', 'math'
 ];
@@ -124,7 +152,12 @@ const findMatchingKeywords = (text, keywords) => {
 const detectServiceType = (text) => {
   const lowerText = text.toLowerCase();
 
-  if (lowerText.includes('برمجة') || lowerText.includes('code') || lowerText.includes('python') || lowerText.includes('java') || lowerText.includes('حاسب')) {
+  // Sick leave / Medical must be checked FIRST (highest priority for the user)
+  if (lowerText.includes('سكليف') || lowerText.includes('سكاليف') || lowerText.includes('سكالف') || lowerText.includes('سيكليف') || lowerText.includes('سكيليف') || lowerText.includes('sick leave')) {
+    return 'سكليف';
+  } else if (lowerText.includes('عذر طبي') || lowerText.includes('عذر مرضي') || lowerText.includes('عذر ورقي') || lowerText.includes('اجازة مرضية') || lowerText.includes('إجازة مرضية') || lowerText.includes('شهادة مرضية') || lowerText.includes('مشهد مراجعه') || lowerText.includes('مشهد مراجعة') || lowerText.includes('وصفة طبية') || lowerText.includes('وصفه طبيه') || lowerText.includes('مرافق مريض') || lowerText.includes('تقرير طبي') || lowerText.includes('شهادة صحية') || lowerText.includes('فحص طبي') || lowerText.includes('موعد مستشفى')) {
+    return 'طب';
+  } else if (lowerText.includes('برمجة') || lowerText.includes('code') || lowerText.includes('python') || lowerText.includes('java') || lowerText.includes('حاسب')) {
     return 'برمجة';
   } else if (lowerText.includes('بحث') || lowerText.includes('بحوث') || lowerText.includes('research')) {
     return 'بحث';
@@ -132,6 +165,10 @@ const detectServiceType = (text) => {
     return 'CV';
   } else if (lowerText.includes('تدريب')) {
     return 'تدريب';
+  } else if (lowerText.includes('كانفا') || lowerText.includes('canva') || lowerText.includes('فوتوشوب') || lowerText.includes('photoshop') || lowerText.includes('فيتشوب') || lowerText.includes('انفوجرافيك')) {
+    return 'تصميم';
+  } else if (lowerText.includes('تصميم') || lowerText.includes('design') || lowerText.includes('لوقو') || lowerText.includes('logo') || lowerText.includes('شعار') || lowerText.includes('بنر')) {
+    return 'تصميم';
   } else if (lowerText.includes('تقرير') || lowerText.includes('report') || lowerText.includes('تقارير')) {
     return 'تقارير';
   } else if (lowerText.includes('مشروع') || lowerText.includes('project') || lowerText.includes('بروجكت') || lowerText.includes('مشروع تخرج')) {
@@ -146,12 +183,8 @@ const detectServiceType = (text) => {
     return 'رياضيات';
   } else if (lowerText.includes('ترجمة') || lowerText.includes('translation')) {
     return 'ترجمة';
-  } else if (lowerText.includes('تصميم') || lowerText.includes('design')) {
-    return 'تصميم';
-  } else if (lowerText.includes('طب') || lowerText.includes('عذر') || lowerText.includes('تقرير طبي')) {
-    return 'طب';
-  } else if (lowerText.includes('سكليف') || lowerText.includes('scalf')) {
-    return 'سكليف';
+  } else if (lowerText.includes('وورد') || lowerText.includes('word') || lowerText.includes('اكسل') || lowerText.includes('excel')) {
+    return 'واجبات';
   }
 
   return null;
