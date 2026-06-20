@@ -15,6 +15,24 @@ const { emitToAdmins } = require('../../utils/socket');
 /** @type {Map<string, TelegramClient>} accountId -> TelegramClient */
 const activeClients = new Map();
 
+// ─── In-Memory Dedup Cache ────────────────────────────────────────────────────
+// Prevents the same message from being processed twice when multiple accounts
+// receive it simultaneously (race condition that DB dedup cannot catch).
+/** @type {Map<string, number>} dedupKey -> timestamp */
+const recentMessageCache = new Map();
+const DEDUP_CACHE_TTL_MS = 30 * 1000; // 30 seconds
+const DEDUP_CACHE_CLEANUP_INTERVAL = 60 * 1000; // clean every 60 seconds
+
+// Periodically clean expired entries from the dedup cache
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, ts] of recentMessageCache) {
+    if (now - ts > DEDUP_CACHE_TTL_MS) {
+      recentMessageCache.delete(key);
+    }
+  }
+}, DEDUP_CACHE_CLEANUP_INTERVAL);
+
 // ─── Sleep Helper ──────────────────────────────────────────────────────────────
 /**
  * Sleeps for a given number of seconds.
@@ -239,6 +257,17 @@ const handleNewMessage = async (event, account, client) => {
     const messageText = parsedForward ? parsedForward.messageText : rawMessageText;
 
     if (!messageText || messageText.length < 5) return;
+
+    // ─── Fast In-Memory Dedup ─────────────────────────────────────────────────
+    // Build a key from senderId + messageText to catch the same message arriving
+    // from multiple listener accounts within seconds of each other.
+    const parsedSenderId = parsedForward ? parsedForward.senderId : (message.fromId ? String(message.fromId.userId || message.fromId.channelId || '') : '');
+    const dedupKey = `${parsedSenderId}:${groupId}:${messageText.substring(0, 100)}`;
+    if (recentMessageCache.has(dedupKey)) {
+      logger.debug(`Fast-dedup: skipping already-processed message in "${groupName}" from account ${account.phone}`);
+      return;
+    }
+    recentMessageCache.set(dedupKey, Date.now());
 
     // Fetch sender info with a timeout to prevent hanging on Telegram API
     let senderName = parsedForward ? parsedForward.senderName : 'Unknown';
