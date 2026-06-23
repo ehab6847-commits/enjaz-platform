@@ -54,9 +54,17 @@ const ADVERTISER_KEYWORDS = [
   'نسوي اعذار', 'نسوي أعذار', 'نوفر اعذار', 'نوفر أعذار',
   'نسوي تقارير طبية', 'نوفر تقارير طبية', 'نسوي عذر طبي',
   'عندنا سكاليف', 'عندنا سكليف', 'متوفر سكاليف', 'متوفر سكليف',
-  'لعمل سكليف', 'سكاليف بسعر', 'سكليف بسعر', 'سكاليف مضمون',
+  'لعمل سكليف', 'skاليف بسعر', 'سكاليف بسعر', 'سكليف بسعر', 'سكاليف مضمون',
   'سكليف مضمون', 'اعذار مضمونه', 'أعذار مضمونة',
   'نسوي لك', 'نجهز لك', 'نوفر لك', 'نعمل لك',
+  // Expanded Advertiser Patterns from screenshots
+  'تحويل بعد الانجاز', 'تحويل بعد الإنجاز', 'سعر ممتاز', 'انجاز فوري',
+  'إنجاز فوري', 'مستشفى تبي', 'عذر طبي جاهز', 'مضمونه', 'مضمونة',
+  'الاجوبه مضمونه', 'الأجوبة مضمونة', 'لجميع المواد', 'لجميع الصفوف',
+  'ارتق بمجالك', 'ارتق بمسيرتك', 'فرصاً محدودة', 'فرصا محدودة',
+  'للمشاركة في', 'خبرة عالية', 'خبره عاليه', 'للاستفسار',
+  'احجز عندي', 'يحجز عندي', 'تواصل خاص', 'راسلني خاص', 'يرمسني خاص',
+  'نوفر للأطباء', 'نوفر للاطباء', 'مجلات النخبة',
 ];
 
 // ─── Intent Keywords (person ASKING for help) ─────────────────────────────────
@@ -270,13 +278,97 @@ const detectServiceType = (text) => {
  * @param {string} messageText
  * @returns {Object} Classification result
  */
+/**
+ * Helper to count how many distinct academic service categories are matched in the text.
+ * Listing 4+ different subjects/services (e.g. math, physics, coding, sick leave) is a strong advertiser indicator.
+ * @param {string} text
+ * @returns {number} count of unique matched categories
+ */
+const countDetectedServiceTypes = (text) => {
+  const lowerText = text.toLowerCase();
+  let count = 0;
+  const categories = [
+    ['سكليف', 'سكاليف', 'عذر طبي', 'تقرير طبي'],
+    ['برمجة', 'بايثون', 'جاوا', 'code'],
+    ['بحث', 'بحوث', 'research'],
+    ['محاسبة', 'تكاليف', 'جدوى'],
+    ['رياضيات', 'ماث', 'معادلات'],
+    ['ترجمة', 'translation'],
+    ['تصميم', 'كانفا', 'فوتوشوب'],
+    ['كويز', 'اختبار', 'امتحان'],
+  ];
+  categories.forEach(cat => {
+    if (cat.some(kw => lowerText.includes(kw))) {
+      count++;
+    }
+  });
+  return count;
+};
+
+/**
+ * Enhanced keyword-based fallback classifier.
+ * Requires BOTH an intent keyword AND an academic keyword to classify as a request.
+ * Incorporates structural scoring to reject long spam advertiser posts containing emojis, lists of subjects, and repeated links/handles.
+ * @param {string} messageText
+ * @returns {Object} Classification result
+ */
 const keywordFallback = (messageText) => {
   const trimmedText = messageText.trim();
   const matchedAdvertiserKws = findMatchingKeywords(trimmedText, ADVERTISER_KEYWORDS);
   const matchedIntentKws = findMatchingKeywords(trimmedText, INTENT_KEYWORDS);
   const matchedAcademicKws = findMatchingKeywords(trimmedText, ACADEMIC_KEYWORDS);
 
-  const isAdvertiser = matchedAdvertiserKws.length >= 2; // Need at least 2 ad keywords
+  // ─── Structural Advertiser Scoring ──────────────────────────────────────────
+  let advertiserScore = 0;
+
+  // 1. Keyword Matches (1.5 points per ad keyword matched)
+  advertiserScore += matchedAdvertiserKws.length * 1.5;
+
+  // 2. Emoji Density & Count
+  // Matches typical emojis and decorative symbols used in ads
+  const emojiMatches = trimmedText.match(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2B06}\u{2190}-\u{21FF}]/gu);
+  const emojiCount = emojiMatches ? emojiMatches.length : 0;
+  if (emojiCount >= 10) {
+    advertiserScore += 4.0;
+  } else if (emojiCount >= 5) {
+    advertiserScore += 2.0;
+  }
+
+  // 3. Repeated Contact/Handles (e.g. repeated telegram usernames or whatsapp links)
+  const usernameMatches = trimmedText.match(/@[a-zA-Z0-9_]+/g);
+  if (usernameMatches) {
+    const usernameCounts = {};
+    usernameMatches.forEach(u => {
+      usernameCounts[u] = (usernameCounts[u] || 0) + 1;
+    });
+    const maxRepetitions = Math.max(...Object.values(usernameCounts));
+    if (maxRepetitions >= 3) {
+      advertiserScore += 4.0; // Same handle repeated multiple times is a signature ad structure
+    } else if (usernameMatches.length >= 3) {
+      advertiserScore += 2.0; // Multiple different handles
+    }
+  }
+
+  // WhatsApp / External links
+  if (/wa\.me|api\.whatsapp|chat\.whatsapp|t\.me/i.test(trimmedText)) {
+    // Note: only add score if there's no question intent, since students might post links occasionally
+    // but advertisers always have links.
+    advertiserScore += 2.5;
+  }
+
+  // 4. Multi-subject listing
+  const serviceTypesCount = countDetectedServiceTypes(trimmedText);
+  if (serviceTypesCount >= 4) {
+    advertiserScore += 3.0; // A single student doesn't request 4+ completely different subjects in one message
+  }
+
+  // 5. Length Check (ads are typically very long paragraphs)
+  if (trimmedText.length > 500) {
+    advertiserScore += 1.5;
+  }
+
+  // Determine advertiser status based on cumulative score (threshold = 3.0)
+  const isAdvertiser = advertiserScore >= 3.0;
 
   // Smart student posting detection:
   // 1. Classic case: has intent (e.g. ابي, احتاج) AND academic topic (e.g. واجب, ماث)
