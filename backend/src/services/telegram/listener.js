@@ -64,27 +64,32 @@ const forwardRequestToChannel = async (request) => {
       return;
     }
 
-    // Clean sender name or default to username
-    const phoneMatch = request.senderName ? request.senderName.match(/\(([^)]+)\)/) : null;
-    const phoneVal = request.senderPhone || (phoneMatch ? phoneMatch[1] : null);
-    let cleanSenderName = request.senderName ? request.senderName.replace(/\s*\([^)]+\)/, '') : 'مجهول';
-    if (request.senderUsername) {
-      cleanSenderName = `@${request.senderUsername}`;
-    }
+    // Clean sender display name (remove phone from parentheses)
+    let cleanSenderName = request.senderName ? request.senderName.replace(/\s*\([^)]+\)/, '').trim() : 'مجهول';
 
-    // Direct message link: use https://t.me/ for username, or tg://user?id= in the message text HTML anchor (safe)
+    // Username display: always show prominently
+    const usernameDisplay = request.senderUsername ? `@${request.senderUsername}` : 'غير متوفر';
+
+    // Direct message link: use https://t.me/ for username, or tg://user?id= fallback
     const directMessageLink = request.senderUsername 
       ? `https://t.me/${request.senderUsername}` 
       : (request.senderId && request.senderId !== 'unknown' ? `tg://user?id=${request.senderId}` : null);
 
+    // Make the username a clickable link if available
+    const usernameLink = request.senderUsername && directMessageLink
+      ? `<a href="${directMessageLink}">@${request.senderUsername}</a>`
+      : usernameDisplay;
+
+    // Make the name a clickable link too
     const nameLink = directMessageLink 
       ? `<a href="${directMessageLink}">${cleanSenderName}</a>`
       : cleanSenderName;
 
-    // Format the message briefly to match user's screenshot exactly
+    // Format the message with username always visible
     const formattedMessageLines = [
-      `👤 <b>${nameLink}</b>`,
-      `المرسل : ID <code>${request.senderId}</code>\n`,
+      `👤 الاسم : <b>${nameLink}</b>`,
+      `🆔 اليوزر : <b>${usernameLink}</b>`,
+      `🔢 المرسل : ID <code>${request.senderId}</code>\n`,
       `نص الرساله :`,
       request.messageText,
       `رابط الرساله : ${request.messageLink || 'غير متوفر'}`
