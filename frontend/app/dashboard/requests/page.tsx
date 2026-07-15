@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSocket } from '@/contexts/SocketContext';
-import { apiGet, apiPatch, apiDelete } from '@/lib/api';
+import { apiGet, apiPatch, apiDelete, apiPost } from '@/lib/api';
 import { StatusBadge, PriorityBadge, ServiceBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -25,6 +25,11 @@ import {
   RefreshCw,
   ChevronDown,
   Bell,
+  ThumbsUp,
+  ThumbsDown,
+  AlertTriangle,
+  ShieldAlert,
+  MessageCircle,
 } from 'lucide-react';
 import {
   timeAgo,
@@ -101,6 +106,27 @@ function RequestDetailModal({
   onClose: () => void;
   onStatusChange: (id: string, status: string) => void;
 }) {
+  const [feedbackSent, setFeedbackSent] = useState<string | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+
+  // Reset feedback state when request changes
+  useEffect(() => {
+    setFeedbackSent(null);
+  }, [request?.id]);
+
+  const sendFeedback = async (feedbackType: string) => {
+    if (!request || feedbackLoading) return;
+    setFeedbackLoading(true);
+    try {
+      await apiPost('/feedback', { requestId: request.id, feedbackType });
+      setFeedbackSent(feedbackType);
+      toast.success('تم إرسال التقييم بنجاح');
+    } catch {
+      toast.error('فشل إرسال التقييم');
+    } finally {
+      setFeedbackLoading(false);
+    }
+  };
   if (!request) return null;
   const country = getCountryInfo(request.country);
   const service = getServiceInfo(request.service);
@@ -263,6 +289,49 @@ function RequestDetailModal({
               </button>
             ))}
           </div>
+        </div>
+
+        {/* AI Feedback / Training */}
+        <div>
+          <p className="text-xs font-bold text-text-subtle uppercase mb-3 flex items-center gap-1.5">
+            <span>🧠</span> تقييم التصنيف
+          </p>
+          {feedbackSent ? (
+            <div className="p-3 rounded-xl bg-success/10 border border-success/30 text-success text-sm text-center">
+              ✅ تم إرسال التقييم: {feedbackSent === 'correct' ? 'تصنيف صحيح' : feedbackSent === 'wrong_request' ? 'ليس طلب' : feedbackSent === 'advertiser' ? 'إعلان' : feedbackSent === 'spam' ? 'سبام' : 'تجاهل'}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => sendFeedback('correct')}
+                disabled={feedbackLoading}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-success/10 text-success border border-success/30 hover:bg-success/20 transition-all disabled:opacity-50"
+              >
+                <ThumbsUp size={14} /> تصنيف صحيح
+              </button>
+              <button
+                onClick={() => sendFeedback('wrong_request')}
+                disabled={feedbackLoading}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-warning/10 text-warning border border-warning/30 hover:bg-warning/20 transition-all disabled:opacity-50"
+              >
+                <ThumbsDown size={14} /> ليس طلب
+              </button>
+              <button
+                onClick={() => sendFeedback('advertiser')}
+                disabled={feedbackLoading}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-error/10 text-error border border-error/30 hover:bg-error/20 transition-all disabled:opacity-50"
+              >
+                <AlertTriangle size={14} /> إعلان
+              </button>
+              <button
+                onClick={() => sendFeedback('spam')}
+                disabled={feedbackLoading}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-error/10 text-error border border-error/30 hover:bg-error/20 transition-all disabled:opacity-50"
+              >
+                <ShieldAlert size={14} /> سبام
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </Modal>
