@@ -222,7 +222,7 @@ const parseForwardedFormat = (text) => {
  * @param {TelegramAccount} account - DB account object
  * @param {TelegramClient} client - Active gramJS client
  */
-const handleNewMessage = async (event, account, client) => {
+async function handleNewMessage(event, account, client) {
   try {
     const message = event.message;
 
@@ -522,7 +522,7 @@ const handleNewMessage = async (event, account, client) => {
   } catch (err) {
     logger.error('Error handling Telegram message', { error: err.message, stack: err.stack });
   }
-};
+}
 
 // ─── Create Client for Account ─────────────────────────────────────────────────
 /**
