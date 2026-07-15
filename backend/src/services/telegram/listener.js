@@ -64,55 +64,64 @@ const forwardRequestToChannel = async (request) => {
       return;
     }
 
-    // Clean sender display name (remove phone from parentheses)
-    let cleanSenderName = request.senderName ? request.senderName.replace(/\s*\([^)]+\)/, '').trim() : 'مجهول';
+    // Build display name: prefer @username, fallback to cleaned name
+    let displayName = 'مجهول';
+    if (request.senderUsername) {
+      displayName = `@${request.senderUsername}`;
+    } else if (request.senderName && request.senderName !== 'Unknown') {
+      displayName = request.senderName.replace(/\s*\([^)]+\)/, '').trim();
+    }
 
-    // Username display: always show prominently
-    const usernameDisplay = request.senderUsername ? `@${request.senderUsername}` : 'غير متوفر';
-
-    // Direct message link: use https://t.me/ for username, or tg://user?id= fallback
+    // Direct message link
     const directMessageLink = request.senderUsername 
       ? `https://t.me/${request.senderUsername}` 
       : (request.senderId && request.senderId !== 'unknown' ? `tg://user?id=${request.senderId}` : null);
 
-    // Make the username a clickable link if available
-    const usernameLink = request.senderUsername && directMessageLink
-      ? `<a href="${directMessageLink}">@${request.senderUsername}</a>`
-      : usernameDisplay;
-
-    // Make the name a clickable link too
+    // Make display name a clickable link
     const nameLink = directMessageLink 
-      ? `<a href="${directMessageLink}">${cleanSenderName}</a>`
-      : cleanSenderName;
+      ? `<a href="${directMessageLink}">${displayName}</a>`
+      : displayName;
 
-    // Format the message with username always visible
+    // Format the message — OLD compact format matching user's screenshot
     const formattedMessageLines = [
-      `👤 الاسم : <b>${nameLink}</b>`,
-      `🆔 اليوزر : <b>${usernameLink}</b>`,
-      `🔢 المرسل : ID <code>${request.senderId}</code>\n`,
+      `👤 <b>${nameLink}</b>`,
+      `المرسل : ID <code>${request.senderId}</code>\n`,
       `نص الرساله :`,
       request.messageText,
-      `رابط الرساله : ${request.messageLink || 'غير متوفر'}`
     ];
+
+    // Add group info if available
+    if (request.groupLink) {
+      formattedMessageLines.push(`المجموعة : <a href="${request.groupLink}">${request.groupName || 'مجموعة'}</a>`);
+    }
+
+    // Add message link
+    formattedMessageLines.push(`رابط الرساله : ${request.messageLink || 'غير متوفر'}`);
 
     const formattedMessage = formattedMessageLines.join('\n');
 
-    // Build buttons row: [ رسالة خاصة ] (only if public username is available) and [ عرض الرسالة ] side-by-side
+    // Build buttons row: [ عرض الرسالة ] and [ رسالة خاصة ] side-by-side
     const buttons = [];
+
+    // Original message link — always first button if available
+    if (request.messageLink && (request.messageLink.startsWith('http://') || request.messageLink.startsWith('https://') || request.messageLink.startsWith('tg://'))) {
+      buttons.push({
+        text: '🔗 عرض الرسالة',
+        url: request.messageLink
+      });
+    }
     
-    // Direct message link - ONLY if they have a public username to prevent BUTTON_USER_INVALID crash
+    // Direct message link — use username if available, otherwise use tg://user?id= for users with ID
     if (request.senderUsername) {
       buttons.push({
         text: '📱 رسالة خاصة',
         url: `https://t.me/${request.senderUsername}`
       });
-    }
-
-    // Original message link - only add if it is a valid URL scheme to prevent API crash
-    if (request.messageLink && (request.messageLink.startsWith('http://') || request.messageLink.startsWith('https://') || request.messageLink.startsWith('tg://'))) {
+    } else if (request.senderId && request.senderId !== 'unknown') {
+      // tg://user?id= works as a URL button for users without public username
       buttons.push({
-        text: '🔗 عرض الرسالة',
-        url: request.messageLink
+        text: '📱 رسالة خاصة',
+        url: `tg://user?id=${request.senderId}`
       });
     }
 
@@ -274,8 +283,8 @@ const handleNewMessage = async (event, account, client) => {
     }
     recentMessageCache.set(dedupKey, Date.now());
 
-    // Fetch sender info with a timeout to prevent hanging on Telegram API
-    let senderName = parsedForward ? parsedForward.senderName : 'Unknown';
+    // ─── Enhanced Sender Extraction (multi-attempt) ────────────────────────────
+    let senderName = parsedForward ? parsedForward.senderName : 'مجهول';
     let senderUsername = null;
     let senderId = parsedForward ? parsedForward.senderId : 'unknown';
     let senderPhone = null;
@@ -289,50 +298,107 @@ const handleNewMessage = async (event, account, client) => {
     }
 
     if (!parsedForward) {
-      try {
-        const sender = await Promise.race([
-          event.getSender(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
-        ]).catch(() => null);
+      // Always extract senderId from message.fromId first (guaranteed available)
+      if (message.fromId) {
+        senderId = String(message.fromId.userId || message.fromId.channelId || 'unknown');
+      }
 
-        if (sender) {
-          senderPhone = sender.phone || null;
-          let name = [sender.firstName, sender.lastName].filter(Boolean).join(' ') || sender.title || 'Unknown';
-          if (senderPhone) {
-            name += ` (${senderPhone.startsWith('+') ? '' : '+'}${senderPhone})`;
-          }
-          senderName = name;
-          senderUsername = sender.username || null;
-          senderId = sender.id ? String(sender.id) : 'unknown';
-        } else if (message.fromId) {
-          senderId = String(message.fromId.userId || message.fromId.channelId || 'unknown');
+      // Attempt 1: getSender() with 5s timeout
+      let sender = null;
+      try {
+        sender = await Promise.race([
+          event.getSender(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+        ]);
+      } catch (e) {
+        logger.debug(`getSender() failed for msg in ${groupName}: ${e.message}`);
+      }
+
+      // Attempt 2: client.getEntity() if getSender() failed
+      if (!sender && message.fromId && client) {
+        try {
+          sender = await Promise.race([
+            client.getEntity(message.fromId),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 4000))
+          ]);
+        } catch (e) {
+          logger.debug(`getEntity() fallback failed for msg in ${groupName}: ${e.message}`);
         }
-      } catch (senderErr) {
-        logger.debug(`Could not fetch sender info for message in ${groupName}: ${senderErr.message}`);
+      }
+
+      // Extract all available info from sender
+      if (sender) {
+        senderPhone = sender.phone || null;
+        const firstName = sender.firstName || '';
+        const lastName = sender.lastName || '';
+        let name = [firstName, lastName].filter(Boolean).join(' ') || sender.title || '';
+        if (!name && senderPhone) {
+          name = `+${senderPhone.replace(/^\+/, '')}`;
+        }
+        senderName = name || 'مجهول';
+        if (senderPhone && name && !name.includes(senderPhone)) {
+          senderName += ` (+${senderPhone.replace(/^\+/, '')})`;
+        }
+        senderUsername = sender.username || null;
+        senderId = sender.id ? String(sender.id) : senderId;
+      }
+
+      // Log extraction failure for debugging
+      if (senderName === 'مجهول' && senderId === 'unknown') {
+        logger.warn(`Failed to extract ANY sender info for message in ${groupName}`, {
+          hasFromId: !!message.fromId,
+          messageId: message.id,
+        });
       }
     }
 
     // Build links
-    const profileLink = senderUsername ? `https://t.me/${senderUsername}` : null;
+    const profileLink = senderUsername
+      ? `https://t.me/${senderUsername}`
+      : (senderId !== 'unknown' ? `tg://user?id=${senderId}` : null);
     
+    // ─── Enhanced Group & Message Link Extraction ─────────────────────────────
     let messageLink = null;
+    let groupUsername = null;
+    let groupLink = null;
+    const rawMessageId = message.id ? String(message.id) : null;
+
     if (parsedForward) {
       messageLink = parsedForward.messageLink;
     } else {
-      let chatUsername = null;
+      // Get chat entity for group info
+      let chat = null;
       try {
-        const chat = await Promise.race([
+        chat = await Promise.race([
           event.getChat(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 1500))
-        ]).catch(() => null);
-        if (chat) {
-          chatUsername = chat.username || null;
-        }
-      } catch (e) {}
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+        ]);
+      } catch (e) {
+        logger.debug(`getChat() failed for msg in ${groupName}: ${e.message}`);
+      }
 
-      messageLink = chatUsername && message.id
-        ? `https://t.me/${chatUsername}/${message.id}`
-        : null;
+      if (chat) {
+        groupUsername = chat.username || null;
+
+        if (groupUsername) {
+          // Public group: direct link
+          groupLink = `https://t.me/${groupUsername}`;
+          messageLink = message.id ? `https://t.me/${groupUsername}/${message.id}` : null;
+        } else {
+          // Private group: use c/ format for message link
+          const channelId = String(chat.id).replace('-100', '').replace('-', '');
+          messageLink = message.id ? `https://t.me/c/${channelId}/${message.id}` : null;
+          groupLink = `المجموعة خاصة (ID: ${groupId})`;
+        }
+      }
+    }
+
+    // Update monitored group with username/link if we found one
+    if (groupUsername && monitoredGroup) {
+      db.monitoredGroup.update({
+        where: { id: monitoredGroup.id },
+        data: { groupUsername, groupLink, isPublic: true },
+      }).catch(() => {});
     }
 
     // Classify the message
@@ -394,6 +460,9 @@ const handleNewMessage = async (event, account, client) => {
           messageLink,
           groupName,
           groupId,
+          groupUsername: groupUsername || null,
+          groupLink: groupLink || null,
+          messageId: rawMessageId || null,
           country: monitoredGroup.country || null,
           serviceType,
           confidenceScore,
@@ -528,11 +597,15 @@ const createClientForAccount = async (account) => {
             });
 
             if (!existing) {
+              const dialogUsername = dialog.entity?.username || null;
               await db.monitoredGroup.create({
                 data: {
                   accountId: account.id,
                   groupId: groupId,
                   groupName: groupName,
+                  groupUsername: dialogUsername,
+                  groupLink: dialogUsername ? `https://t.me/${dialogUsername}` : null,
+                  isPublic: !!dialogUsername,
                   isActive: true
                 }
               });

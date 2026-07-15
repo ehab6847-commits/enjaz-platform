@@ -20,6 +20,8 @@ const telegramRoutes = require('./routes/telegram.routes');
 const usersRoutes = require('./routes/users.routes');
 const notificationRoutes = require('./routes/notifications.routes');
 const settingsRoutes = require('./routes/settings.routes');
+const feedbackRoutes = require('./routes/feedback.routes');
+const errorsRoutes = require('./routes/errors.routes');
 
 // Services
 const { startAllListeners } = require('./services/telegram/listener');
@@ -154,6 +156,8 @@ app.use('/api/telegram', telegramRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/feedback', feedbackRoutes);
+app.use('/api/errors', errorsRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use('*', (req, res) => {

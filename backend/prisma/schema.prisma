@@ -61,6 +61,7 @@ model User {
 
   notifications    Notification[]
   activityLogs     ActivityLog[]
+  feedbacks        ClassificationFeedback[]
 
   @@map("users")
 }
@@ -88,8 +89,13 @@ model Request {
   expiresAt       DateTime
   archivedAt      DateTime?
   accountPhone    String?
+  adminFeedback  String?
+  groupUsername  String?
+  groupLink      String?
+  messageId      String?
 
   notifications   Notification[]
+  feedbacks       ClassificationFeedback[]
 
   @@map("requests")
   @@index([status])
@@ -125,6 +131,9 @@ model MonitoredGroup {
   groupName String?
   country   String?
   isActive  Boolean  @default(true)
+  groupUsername  String?
+  groupLink      String?
+  isPublic       Boolean  @default(false)
   createdAt DateTime @default(now())
 
   account   TelegramAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -170,4 +179,39 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 
   @@map("system_settings")
+}
+
+model ClassificationFeedback {
+  id            String   @id @default(cuid())
+  requestId     String
+  request       Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  adminId       String
+  admin         User     @relation(fields: [adminId], references: [id])
+  feedbackType  String   // correct, wrong_request, advertiser, spam, ignore
+  originalScore Float
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  @@index([feedbackType])
+  @@index([createdAt])
+  @@map("classification_feedback")
+}
+
+model ProcessingError {
+  id            String   @id @default(cuid())
+  messageText   String?
+  groupName     String?
+  groupId       String?
+  accountPhone  String?
+  errorType     String   // sender_extraction, classification, forwarding, db_save
+  errorMessage  String
+  errorStack    String?  @db.Text
+  rawData       String?  @db.Text
+  resolved      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([errorType])
+  @@index([createdAt])
+  @@index([resolved])
+  @@map("processing_errors")
 }

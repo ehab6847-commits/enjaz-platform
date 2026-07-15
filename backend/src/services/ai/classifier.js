@@ -7,13 +7,15 @@ const logger = require('../../config/logger');
 const SERVICE_TYPES = [
   'برمجة', 'بحث', 'عروض', 'CV', 'رياضيات', 'واجبات',
   'اختبارات', 'مشاريع', 'تقارير', 'ترجمة', 'طب', 'تصميم',
-  'سكليف', 'تدريب',
+  'سكليف', 'تدريب', 'محاسبة',
 ];
 
-// ─── Pre-filter: Quick reject patterns ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TIER 1: PRE-FILTER — Quick reject of obviously irrelevant messages
+// ═══════════════════════════════════════════════════════════════════════════════
+
 /**
  * Quick pre-filter to reject messages that are obviously NOT requests.
- * This saves API calls by filtering out greetings, short replies, etc.
  * @param {string} text
  * @returns {boolean} true if the message should be skipped
  */
@@ -24,7 +26,7 @@ const shouldSkipMessage = (text) => {
   if (trimmed.length < 10) return true;
 
   // Pure greetings / reactions
-  const greetingPatterns = /^(السلام عليكم|وعليكم السلام|مرحبا|هلا|اهلا|حياكم|صباح الخير|مساء الخير|شكرا|الله يعطيك العافيه|جزاك الله خير|الحمد لله|ان شاء الله|ماشاء الله|تبارك الله|سبحان الله|الله اكبر|هههه|لا اله الا الله|استغفر الله|اللهم صل|آمين|امين|الله يوفقكم|موفق|بالتوفيق|تمام|اوكي|ok|okay|hi|hello|good morning|thanks)\s*[!.؟]*$/i;
+  const greetingPatterns = /^(السلام عليكم|وعليكم السلام|مرحبا|هلا|اهلا|حياكم|صباح الخير|مساء الخير|شكرا|الله يعطيك العافيه|جزاك الله خير|الحمد لله|ان شاء الله|ماشاء الله|تبارك الله|سبحان الله|الله اكبر|هههه|لا اله الا الله|استغفر الله|اللهم صل|آمين|امين|الله يوفقكم|موفق|بالتوفيق|تمام|اوكي|ok|okay|hi|hello|good morning|thanks)[\s!.؟]*$/i;
   if (greetingPatterns.test(trimmed)) return true;
 
   // Messages that are just emojis
@@ -38,64 +40,134 @@ const shouldSkipMessage = (text) => {
   return false;
 };
 
-// ─── Advertiser Detection Keywords ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TIER 2: INTENT ANALYSIS — Smart keyword matching with word boundaries
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Advertiser Detection ──────────────────────────────────────────────────────
+
+// Pattern-based advertiser phrases (checked with word-aware matching)
 const ADVERTISER_KEYWORDS = [
-  'تواصل معنا', 'لطلب الخدمة', 'أفضل الأسعار', 'خصم', 'ضمان',
+  // Service offering phrases
+  'تواصل معنا', 'لطلب الخدمة', 'أفضل الأسعار', 'افضل الاسعار',
   'نقدم خدمات', 'نوفر لكم', 'متوفر لدينا', 'فريقنا', 'نحل واجبات',
-  'نكتب بحوث', 'مضمون', 'سعر مناسب', 'كادر أكاديمي', 'خدماتنا',
-  'واتس للتواصل', 'تواصل عبر الواتس', 'للتواصل واتس', 'نسوي بحوث',
-  'نسوي واجبات', 'نقدم المساعدة', 'مكتب إنجاز', 'نوفر كادر',
-  'اسعار مناسبه', 'اسعار مناسبة', 'ارخص الاسعار', 'عرض خاص',
-  'خصومات', 'تخفيضات', 'للحجز', 'للطلب تواصل', 'واتساب',
+  'نكتب بحوث', 'سعر مناسب', 'كادر أكاديمي', 'خدماتنا',
+  'واتس للتواصل', 'تواصل عبر الواتس', 'للتواصل واتس',
+  'نسوي بحوث', 'نسوي واجبات', 'نقدم المساعدة',
+  'مكتب إنجاز', 'مكتب انجاز', 'نوفر كادر',
+  'اسعار مناسبه', 'اسعار مناسبة', 'ارخص الاسعار',
+  'عرض خاص', 'خصومات', 'تخفيضات', 'للحجز', 'للطلب تواصل',
   'فريق متخصص', 'فريق أكاديمي', 'خدمة مميزة', 'جودة عالية',
   'نضمن لكم', 'ضمان النجاح', 'متخصصون في', 'نقدم لكم',
-  // Advertiser patterns for sick leave / medical services
+  // Sick leave advertiser patterns
   'نسوي سكاليف', 'نسوي سكليف', 'نوفر سكاليف', 'نوفر سكليف',
   'نسوي اعذار', 'نسوي أعذار', 'نوفر اعذار', 'نوفر أعذار',
   'نسوي تقارير طبية', 'نوفر تقارير طبية', 'نسوي عذر طبي',
   'عندنا سكاليف', 'عندنا سكليف', 'متوفر سكاليف', 'متوفر سكليف',
-  'لعمل سكليف', 'skاليف بسعر', 'سكاليف بسعر', 'سكليف بسعر', 'سكاليف مضمون',
+  'لعمل سكليف', 'سكاليف بسعر', 'سكليف بسعر', 'سكاليف مضمون',
   'سكليف مضمون', 'اعذار مضمونه', 'أعذار مضمونة',
+  // Generic offering patterns
   'نسوي لك', 'نجهز لك', 'نوفر لك', 'نعمل لك',
-  // Expanded Advertiser Patterns from screenshots
-  'تحويل بعد الانجاز', 'تحويل بعد الإنجاز', 'سعر ممتاز', 'انجاز فوري',
-  'إنجاز فوري', 'مستشفى تبي', 'عذر طبي جاهز', 'مضمونه', 'مضمونة',
+  'تحويل بعد الانجاز', 'تحويل بعد الإنجاز', 'سعر ممتاز',
+  'انجاز فوري', 'إنجاز فوري', 'عذر طبي جاهز',
   'الاجوبه مضمونه', 'الأجوبة مضمونة', 'لجميع المواد', 'لجميع الصفوف',
-  'ارتق بمجالك', 'ارتق بمسيرتك', 'فرصاً محدودة', 'فرصا محدودة',
+  'ارتق بمجالك', 'ارتق بمسيرتك', 'فرصا محدودة', 'فرصاً محدودة',
   'للمشاركة في', 'خبرة عالية', 'خبره عاليه', 'للاستفسار',
   'احجز عندي', 'يحجز عندي', 'تواصل خاص', 'راسلني خاص', 'يرمسني خاص',
   'نوفر للأطباء', 'نوفر للاطباء', 'مجلات النخبة',
+  'الفل مارك', 'full mark', 'بإذن الله',
+  'حصرية وخالية', 'خالية من الانتحال', 'خالية من الذكاء الاصطناعي',
+  'التزام تام', 'التزام بالمواعيد',
+];
+
+// Regex patterns for advertiser sentence structures
+const ADVERTISER_PATTERNS = [
+  // "I offer you" / "We provide" patterns
+  /أقدم\s+لكم/,
+  /نقدم\s+لكم/,
+  /أقدم\s+جميع/,
+  /نقدم\s+جميع/,
+  // "Available" + service listing
+  /متوفر\s+(حل|كتابة|عمل|تصميم|ترجمة)/,
+  // "We do" patterns (provider, not requester)
+  /نسوي\s+(لكم|لك|جميع|كل|أي)/,
+  /نوفر\s+(لكم|لك|جميع|كل|أي)/,
+  /نعمل\s+(لكم|لك|جميع|كل|أي)/,
+  // "Contact us" / "For ordering"
+  /للتواصل\s+(والطلب|معنا|واتس|على|عبر)/,
+  /تواصل\s+(واتساب|واتس|خاص|معنا|على)/,
+  // "Our team" / "Our office"
+  /فريقنا\s+المتخصص/,
+  /لدينا\s+فريق/,
+  /عندنا\s+فريق/,
+  // "Guaranteed" service offerings
+  /مضمون[ةه]?\s+(بإذن|ان شاء|100)/,
+  /ضمان\s+(النجاح|الفل|الدرجة|الدرجه)/,
+  // Price/discount patterns
+  /بسعر\s+(مناسب|رمزي|ممتاز|خاص|منافس)/,
+  /خصم\s+\d+/,
+  /عرض\s+(خاص|حصري|لفترة)/,
+  // "Our advantages" / "Our features"
+  /مميزات(نا|ي)?:/,
+  /مميزات\s+(الخدمة|العمل)/,
 ];
 
 // ─── Intent Keywords (person ASKING for help) ─────────────────────────────────
-const INTENT_KEYWORDS = [
-  'ابي', 'ابغا', 'ابغى', 'أبي', 'أبغا', 'أبغى', 'احتاج', 'أحتاج',
-  'اريد', 'أريد', 'ابي احد', 'ابغى احد', 'محتاج', 'أحتاج أحد',
-  'مين يحل', 'مين يسوي', 'مين يقدر', 'مين يعرف يسوي', 'شخص يحل',
-  'مطلوب', 'مطلب', 'مساعدة', 'مساعده', 'يساعدني', 'ساعدوني',
-  'فزعة', 'فزعه', 'فزعتكم', 'يحللي', 'يسويلي', 'يجهزلي', 'يجهز لي',
-  'ممكن احد', 'اببحث عن', 'ابحث عن شخص', 'مطلوب شخص', 'مطلوب حل',
+// Split into strong and weak intent to improve accuracy
+
+// Strong intent: very likely means the person needs help
+const STRONG_INTENT_KEYWORDS = [
+  'ابي احد', 'ابغى احد', 'أبي أحد', 'أبغى أحد',
+  'ابي حد', 'أبي حد', 'ابغى حد',
+  'احتاج أحد', 'أحتاج أحد', 'محتاج أحد',
+  'مين يحل', 'مين يسوي', 'مين يقدر', 'مين يعرف يسوي',
+  'من يحل', 'من يسوي', 'من يعرف',
+  'شخص يحل', 'شخص يسوي', 'شخص يعرف',
+  'مطلوب شخص', 'مطلوب حل', 'مطلوب مختص',
+  'يحللي', 'يسويلي', 'يجهزلي', 'يجهز لي',
+  'ممكن احد', 'ممكن أحد',
+  'ابحث عن شخص', 'ابحث عن مختص',
+  'ابي شخص ثقه', 'أبي شخص ثقة',
+  'ابي مختص', 'أبي مختص',
+  'ابي حد يسوي', 'أبي حد يسوي',
+  'ابي حد يحل', 'أبي حد يحل',
+  'ابغى حد يسوي', 'ابي حد يفهم', 'أبي حد يفهم',
+  'ابي حد يترجم', 'أبي حد يترجم',
+  'حد يعرف شخص', 'حد يعرف مختص',
+  'أحد يسوي', 'احد يسوي', 'حد يسوي',
+  'أحد يعرف يسوي', 'حد يعرف يسوي', 'حد يعرف يحل',
+  'مين شاطر', 'مين فاهم', 'مين يفهم', 'من يفهم',
+  'يساعدني', 'ساعدوني', 'فزعة', 'فزعه', 'فزعتكم',
+  'need help', 'need someone', 'looking for', 'can someone',
+  'anyone can', 'do my', 'solve my', 'help me with', 'anyone knows',
+];
+
+// Medium intent: likely a request but needs academic context
+const MEDIUM_INTENT_KEYWORDS = [
+  'ابي', 'ابغا', 'ابغى', 'أبي', 'أبغا', 'أبغى',
+  'احتاج', 'أحتاج', 'اريد', 'أريد', 'محتاج',
+  'مساعدة', 'مساعده', 'مطلوب', 'مطلب',
   'يحل', 'يسوي', 'يكتب', 'يبرمج', 'يصمم', 'يترجم', 'يساعد',
-  'مين شاطر', 'مين فاهم', 'مين يعرف', 'مين يقدر', 'مين يترجم', 'مين يصمم', 'مين يبرمج',
-  'عندي', 'مين عنده', 'تكفون', 'تكفى',
-  'كيف', 'شلون', 'وش', 'وشو', 'شنو', 'طريقة', 'طريقه', 'استفسار',
-  'سؤال', 'سوال', 'اسال', 'أسأل', 'استفسر', 'أسئلة', 'اسئلة',
-  'احد يعرف', 'أحد يعرف', 'احد عنده', 'أحد عنده', 'مين قد', 'مين جرب',
-  'هل في', 'هل فيه', 'من يعرف', 'من عنده', 'يفيدني', 'افيدوني', 'أفيدوني',
-  // Sick leave / medical specific intent
-  'حد يعرف', 'أحد يسوي', 'احد يسوي', 'حد يسوي', 'حد يقدر',
-  'شخص ثقه', 'شخص ثقة', 'شخص موثوق', 'مختص', 'متخصص', 'يفهم',
-  'غبت عن', 'صار عندي حرمان', 'حرمان', 'والدفع للمكافاه', 'والدفع للمكافأة',
-  // Newly requested intent expressions
-  'ابي شخص ثقه', 'أبي شخص ثقة', 'ابي مختص شاطر', 'أبي مختص شاطر',
-  'ابي حد يسوي', 'أبي حد يسوي', 'من يحل', 'من يسوي', 'من يعرف',
-  'من يعرف يصمم', 'من يعرف يحل', 'مين يعرف يصمم', 'مين يفهم',
-  'من يفهم', 'حد يعرف يسوي', 'حد يعرف يحل', 'أحد يعرف يسوي',
-  'ابي حد يحل', 'أبي حد يحل', 'ابغى حد يسوي', 'ابي حد يفهم', 'أبي حد يفهم',
-  'الدفع بعد الدرجه', 'الدفع بعد الدرجة', 'بعد الدرجه', 'بعد الدرجة',
-  'للراتب', 'للمكافاه', 'للمكافأة', 'مختص الحين', 'ابي حد يترجم', 'من يترجم',
-  'need help', 'need someone', 'looking for', 'can someone', 'anyone can',
-  'do my', 'solve my', 'help me with', 'anyone knows'
+  'مين يعرف', 'مين يقدر', 'مين يترجم', 'مين يصمم', 'مين يبرمج',
+  'احد يعرف', 'أحد يعرف', 'حد يعرف', 'حد يقدر',
+  'من عنده', 'مين عنده', 'احد عنده', 'أحد عنده',
+  'شخص ثقه', 'شخص ثقة', 'شخص موثوق', 'مختص', 'متخصص',
+  'تكفون', 'تكفى',
+  'يفيدني', 'افيدوني', 'أفيدوني',
+  'غبت عن', 'صار عندي حرمان', 'حرمان',
+  'والدفع للمكافاه', 'والدفع للمكافأة',
+  'الدفع بعد الدرجه', 'الدفع بعد الدرجة',
+  'بعد الدرجه', 'بعد الدرجة',
+  'للراتب', 'للمكافاه', 'للمكافأة',
+  'مختص الحين', 'من يترجم',
+];
+
+// Weak intent: general question words — only counted with very strong academic match
+const WEAK_INTENT_KEYWORDS = [
+  'عندي', 'كيف', 'شلون', 'وش', 'وشو', 'شنو',
+  'طريقة', 'طريقه', 'استفسار', 'سؤال', 'سوال',
+  'اسال', 'أسأل', 'استفسر',
+  'هل في', 'هل فيه', 'مين قد', 'مين جرب',
 ];
 
 // ─── Academic & Service Subject Keywords ──────────────────────────────────────
@@ -110,45 +182,42 @@ const ACADEMIC_KEYWORDS = [
   'جافا', 'بايثون', 'قانون', 'ادارة', 'محاسبة', 'اقتصاد', 'مالية',
   'انجليزي', 'ترجمه', 'كتابة', 'مقال', 'تعبير', 'تدريب', 'تطبيقي',
   'بحوث', 'واجبات', 'مشاريع', 'كويزات', 'تقارير', 'امتحان', 'اختبارات',
-  'جامعة', 'جامعه', 'كلية', 'كليه', 'تخصص', 'تحويل', 'احول', 'أحول',
-  'تسجيل', 'سجل', 'شعبة', 'شعبه', 'جدول', 'جداول', 'معدل', 'درجات',
-  'قبول', 'حذف', 'اضافه', 'إضافة', 'دكتور', 'دكتورة', 'دكتوره', 'استاذ',
-  'محاضرة', 'محاضره', 'محاضرات', 'تمهير', 'شروط', 'شروط التحويل', 'شروط القبول',
-  'متطلب', 'متطلبات', 'معادلة', 'معادله', 'وثيقة', 'وثيقه', 'شهادة', 'شهاده',
-  'تخرج', 'خريج', 'خريجة', 'شعب',
-  // Sick leave / Medical excuses / Documents
-  'سكليف', 'سيكليف', 'skleave', 'سكاليف', 'سكالف', 'سكيليف', 'sick leave',
-  'عذر طبي', 'عذر', 'اعذار', 'أعذار', 'عذر ورقي', 'عذر مرضي',
+  // Sick leave / Medical
+  'سكليف', 'سيكليف', 'سكاليف', 'سكالف', 'سكيليف', 'sick leave',
+  'عذر طبي', 'عذر مرضي', 'عذر ورقي', 'اعذار', 'أعذار',
   'تقرير طبي', 'تقرير مرضي', 'شهادة مرضية', 'شهاده مرضيه',
-  'اجازة مرضية', 'إجازة مرضية', 'اجازه مرضيه', 'إجازه مرضيه',
+  'اجازة مرضية', 'إجازة مرضية', 'اجازه مرضيه',
   'مشهد مراجعه', 'مشهد مراجعة', 'وصفة طبية', 'وصفه طبيه',
-  'موعد مستشفى', 'مستشفى حكومي', 'مستشفى خاص', 'مختم',
-  'مرافق مريض', 'مراجعة طبية', 'مراجعه طبيه',
-  'شهادة صحية', 'شهاده صحيه', 'فحص طبي',
+  'موعد مستشفى', 'مرافق مريض', 'شهادة صحية', 'فحص طبي',
   // Design tools
   'كانفا', 'canva', 'فوتوشوب', 'photoshop', 'فيتشوب',
   'وورد', 'word', 'اكسل', 'excel', 'بوربوينت', 'powerpoint',
   'انفوجرافيك', 'infographic', 'لوقو', 'logo', 'شعار', 'بنر', 'banner',
-  'ملف pdf', 'pdf',
-  // Newly requested Academic & Specialized Keywords
-  'ماث', 'math', 'معادلات', 'تكامل وتفاضل', 'تكامل', 'تفاضل', 'محاسبة مالية', 'دراسة جدوى', 'دراسة جدوي', 'فيزياء',
-  'خرائط ذهنيه', 'خرائط ذهنية', 'خرائط مفاهيم', 'هيكل تنظيمي', 'فيديو بالذكاء الاصطناعي', 'ذكاء اصطناعي', 'ذكاء إصطناعي',
-  'فيديو متحرك', 'تعليق صوتي', 'فيديو انمي', 'موشن جرافيك', 'مناهج البحث', 'بحث علمي', 'مراجع APA 7', 'apa 7', 'apa',
-  'تلخيص فصل', 'تلخيص مقرر', 'تلخيص شبتر', 'تلخيص شباتر', 'تلخيص', 'ملخص', 'رسم هندسي', 'جدول مقارنه', 'جدول مقارنة',
-  'سيرة ذاتية ATS', 'ats', 'سيره ذاتيه ats', 'تدريب نهائي', 'تدريب تعاوني', 'تدريب تطبيقي', 'تدريب ميداني',
-  'طفوله مبكره', 'طفولة مبكرة', 'رياض الأطفال', 'رياض الاطفال', 'احياء', 'الأحياء', 'أحياء', 'بروبوزل', 'proposal',
-  'مقترح بحث', 'خطة بحث', 'خطه بحث', 'ريبورت', 'report', 'مطويه', 'مطوية', 'برشور', 'بروشور', 'ورقه علمية', 'ورقة علمية',
-  'ملصق علمي', 'ملصق علمى', 'بوستر', 'poster', 'ترجمة ملف', 'ترجمة شابتر', 'ترجمة شابترز', 'ترجمة جمله بجمله',
-  'ترجمة جملة بجملة', 'سلايدات', 'شرائح', 'تعبئة البيانات', 'تعبئة بيانات', 'تعديل ملف', 'تحليل احصائي', 'تحليل إحصائي',
-  'spss', 'اس بي اس اس', 'باكت تريسر', 'packet tracer', 'تصميم جرافيك', 'نظم معلومات', 'بحث فقهي', 'توثيق المراجع',
-  'الحواشي', 'الهامش', 'الهوامش', 'لابات', 'لاب', 'بايثون', 'python', 'تطبيق', 'موقع الكتروني', 'موقع إلكتروني',
-  'متجر الكتروني', 'متجر إلكتروني', 'موقع بالويب', 'الويب', 'تصميم تخرج', 'تكليف جماعي', 'اسئلة الفصل', 'أسئلة الفصل', 'اسئله الفصل', 'أسئله الفصل', 'اسئله', 'أسئله',
-  'تفريغ صوتي', 'تفريغ صوتى', 'تعبير باللغة الانجليزية', 'تعبير بالانجليزي',
-  // English
-  'assignment', 'homework', 'project', 'report', 'lab', 'quiz',
-  'exam', 'presentation', 'thesis', 'research', 'essay', 'calculus', 'math'
+  // Math & Science
+  'ماث', 'math', 'معادلات', 'تكامل وتفاضل', 'تكامل', 'تفاضل',
+  'محاسبة مالية', 'محاسبه ماليه', 'تكاليف', 'دراسة جدوى', 'دراسة جدوي',
+  'خرائط ذهنيه', 'خرائط ذهنية', 'خرائط مفاهيم', 'هيكل تنظيمي',
+  'فيديو بالذكاء الاصطناعي', 'ذكاء اصطناعي', 'فيديو',
+  'فيديو متحرك', 'تعليق صوتي', 'فيديو انمي', 'موشن جرافيك',
+  'مناهج البحث', 'بحث علمي', 'مراجع APA 7', 'apa 7', 'apa',
+  'تلخيص فصل', 'تلخيص مقرر', 'تلخيص شبتر', 'تلخيص', 'ملخص',
+  'رسم هندسي', 'جدول مقارنه', 'جدول مقارنة',
+  'سيرة ذاتية ATS', 'ats', 'تدريب نهائي', 'تدريب تطبيقي',
+  'بروبوزل', 'proposal', 'مقترح بحث', 'خطة بحث', 'خطه بحث',
+  'ريبورت', 'report', 'مطويه', 'مطوية', 'برشور', 'بروشور',
+  'ورقه علمية', 'ورقة علمية', 'ملصق علمي', 'بوستر', 'poster',
+  'ترجمة ملف', 'ترجمة شابتر', 'سلايدات', 'شرائح',
+  'تعبئة البيانات', 'تعبئة بيانات', 'تعديل ملف',
+  'تحليل احصائي', 'تحليل إحصائي', 'spss',
+  'باكت تريسر', 'packet tracer', 'تصميم جرافيك', 'نظم معلومات',
+  'بحث فقهي', 'توثيق المراجع', 'لابات',
+  'python', 'تطبيق', 'موقع الكتروني', 'موقع إلكتروني',
+  'متجر الكتروني', 'متجر إلكتروني', 'تصميم تخرج', 'تكليف جماعي',
+  'اسئلة الفصل', 'أسئلة الفصل', 'تفريغ صوتي',
+  'تعبير بالانجليزي', 'رسالة ماجستير', 'رسالة دكتوراه',
+  'assignment', 'homework', 'project', 'lab', 'quiz',
+  'exam', 'presentation', 'thesis', 'research', 'essay', 'calculus',
 ];
-
 
 // ─── Priority Detection Keywords ──────────────────────────────────────────────
 const URGENT_KEYWORDS = [
@@ -162,18 +231,74 @@ const LOW_PRIORITY_KEYWORDS = [
   'مو مستعجل', 'الاسبوع الجاي',
 ];
 
-// ─── Keyword Matcher ───────────────────────────────────────────────────────────
+// ─── Word-Boundary Matching ───────────────────────────────────────────────────
 /**
- * Checks if text contains any of the given keywords (case-insensitive).
+ * Arabic-aware keyword matching that respects word boundaries.
+ * For Arabic: uses spaces/punctuation/start/end as boundaries.
+ * For English: uses \b word boundaries.
  * @param {string} text
  * @param {string[]} keywords
  * @returns {string[]} matched keywords
  */
 const findMatchingKeywords = (text, keywords) => {
   const lowerText = text.toLowerCase();
-  return keywords.filter((kw) => lowerText.includes(kw.toLowerCase()));
+  const matched = [];
+
+  for (const kw of keywords) {
+    const lowerKw = kw.toLowerCase();
+
+    // For multi-word phrases, just check includes (phrase matching is accurate enough)
+    if (lowerKw.includes(' ') || lowerKw.length > 6) {
+      if (lowerText.includes(lowerKw)) {
+        matched.push(kw);
+      }
+      continue;
+    }
+
+    // For short single words, use boundary checking
+    const isEnglish = /^[a-z0-9]+$/i.test(lowerKw);
+    if (isEnglish) {
+      // English: use \b word boundary
+      const regex = new RegExp(`\\b${lowerKw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      if (regex.test(lowerText)) {
+        matched.push(kw);
+      }
+    } else {
+      // Arabic: check if keyword is surrounded by spaces, punctuation, or text boundaries
+      const escaped = lowerKw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(?:^|[\\s.,،؟!\\-:()\\[\\]{}])${escaped}(?:$|[\\s.,،؟!\\-:()\\[\\]{}])`, 'i');
+      if (regex.test(lowerText)) {
+        matched.push(kw);
+      } else if (lowerText.includes(lowerKw)) {
+        // Fallback: still accept if it appears as a standalone substring
+        // but only if the keyword is longer than 3 chars (avoid false matches)
+        if (lowerKw.length > 3) {
+          matched.push(kw);
+        }
+      }
+    }
+  }
+
+  return matched;
 };
 
+// ─── Advertiser Pattern Matching ──────────────────────────────────────────────
+/**
+ * Checks if text matches any advertiser regex patterns.
+ * @param {string} text
+ * @returns {number} count of matched patterns
+ */
+const countAdvertiserPatterns = (text) => {
+  let count = 0;
+  for (const pattern of ADVERTISER_PATTERNS) {
+    if (pattern.test(text)) {
+      count++;
+    }
+  }
+  return count;
+};
+
+// ─── Service Type Detection ───────────────────────────────────────────────────
 /**
  * Detects the academic service type from message text.
  * @param {string} text
@@ -190,27 +315,27 @@ const detectServiceType = (text) => {
     return 'طب';
   }
 
-  // 2. Accounting & Finance (check before programming to avoid 'محاسب' matching 'حاسب')
+  // 2. Accounting & Finance
   if (lowerText.includes('محاسبة') || lowerText.includes('محاسبه') || lowerText.includes('تكاليف') || lowerText.includes('جدوى') || lowerText.includes('جدوي') || lowerText.includes('اقتصاد') || lowerText.includes('مالية')) {
     return 'محاسبة';
   }
 
-  // 3. Training (check before programming to avoid 'تطبيقي' matching 'تطبيق')
-  if (lowerText.includes('تدريب') || lowerText.includes('تعاوني') || lowerText.includes('ميداني') || lowerText.includes('تطبيقي')) {
+  // 3. Training
+  if (lowerText.includes('تدريب') || lowerText.includes('تعاوني') || lowerText.includes('ميداني') || lowerText.includes('تطبيقي') || lowerText.includes('تمهير')) {
     return 'تدريب';
   }
 
   // 4. Programming & Tech
-  if (lowerText.includes('برمجة') || lowerText.includes('برمجه') || lowerText.includes('code') || lowerText.includes('python') || lowerText.includes('java') || 
-     (lowerText.includes('حاسب') && !lowerText.includes('محاسب')) || 
-     lowerText.includes('باكت تريسر') || lowerText.includes('packet tracer') || lowerText.includes('ويب') || 
-     (lowerText.includes('تطبيق') && !lowerText.includes('تطبيقي')) || 
-     lowerText.includes('موقع الكتروني') || lowerText.includes('موقع إلكتروني') || lowerText.includes('متجر الكتروني') || lowerText.includes('متجر إلكتروني') || lowerText.includes('نظم معلومات')) {
+  if (lowerText.includes('برمجة') || lowerText.includes('برمجه') || lowerText.includes('code') || lowerText.includes('python') || lowerText.includes('java') ||
+     (lowerText.includes('حاسب') && !lowerText.includes('محاسب')) ||
+     lowerText.includes('باكت تريسر') || lowerText.includes('packet tracer') ||
+     (lowerText.includes('تطبيق') && !lowerText.includes('تطبيقي')) ||
+     lowerText.includes('موقع الكتروني') || lowerText.includes('موقع إلكتروني') || lowerText.includes('متجر الكتروني') || lowerText.includes('متجر إلكتروني') || lowerText.includes('نظم معلومات') || lowerText.includes('بايثون')) {
     return 'برمجة';
   }
 
   // 5. Research
-  if (lowerText.includes('بحث') || lowerText.includes('بحوث') || lowerText.includes('research') || lowerText.includes('مناهج البحث') || lowerText.includes('بروبوزل') || lowerText.includes('proposal') || lowerText.includes('مقترح بحث') || lowerText.includes('خطة بحث') || lowerText.includes('خطه بحث') || lowerText.includes('ورقه علمية') || lowerText.includes('ورقة علمية') || lowerText.includes('ملصق علمي') || lowerText.includes('بوستر') || lowerText.includes('poster')) {
+  if (lowerText.includes('بحث') || lowerText.includes('بحوث') || lowerText.includes('research') || lowerText.includes('مناهج البحث') || lowerText.includes('بروبوزل') || lowerText.includes('proposal') || lowerText.includes('مقترح بحث') || lowerText.includes('خطة بحث') || lowerText.includes('ورقة علمية') || lowerText.includes('ورقه علمية') || lowerText.includes('ملصق علمي') || lowerText.includes('بوستر') || lowerText.includes('بحث علمي') || lowerText.includes('بحث فقهي')) {
     return 'بحث';
   }
 
@@ -220,52 +345,47 @@ const detectServiceType = (text) => {
   }
 
   // 7. Design & Visuals
-  if (lowerText.includes('كانفا') || lowerText.includes('canva') || lowerText.includes('فوتوشوب') || lowerText.includes('photoshop') || lowerText.includes('فيتشوب') || lowerText.includes('انفوجرافيك') || lowerText.includes('تصميم جرافيك') || lowerText.includes('مطويه') || lowerText.includes('مطوية') || lowerText.includes('برشور') || lowerText.includes('بروشور') || lowerText.includes('لوقو') || lowerText.includes('logo') || lowerText.includes('شعار') || lowerText.includes('بنر') || lowerText.includes('خرائط ذهنيه') || lowerText.includes('خرائط ذهنية') || lowerText.includes('خرائط مفاهيم') || lowerText.includes('هيكل تنظيمي') || lowerText.includes('فيديو') || lowerText.includes('موشن جرافيك') || lowerText.includes('انمي') || lowerText.includes('موشن') || lowerText.includes('تعليق صوتي')) {
+  if (lowerText.includes('كانفا') || lowerText.includes('canva') || lowerText.includes('فوتوشوب') || lowerText.includes('photoshop') || lowerText.includes('فيتشوب') || lowerText.includes('انفوجرافيك') || lowerText.includes('تصميم جرافيك') || lowerText.includes('مطويه') || lowerText.includes('مطوية') || lowerText.includes('برشور') || lowerText.includes('بروشور') || lowerText.includes('لوقو') || lowerText.includes('logo') || lowerText.includes('شعار') || lowerText.includes('بنر') || lowerText.includes('خرائط ذهنيه') || lowerText.includes('خرائط ذهنية') || lowerText.includes('خرائط مفاهيم') || lowerText.includes('هيكل تنظيمي') || lowerText.includes('موشن جرافيك') || lowerText.includes('تعليق صوتي') || lowerText.includes('تصميم') || lowerText.includes('design')) {
     return 'تصميم';
   }
 
-  // 8. Design fallback
-  if (lowerText.includes('تصميم') || lowerText.includes('design')) {
-    return 'تصميم';
-  }
-
-  // 9. Reports
+  // 8. Reports
   if (lowerText.includes('تقرير') || lowerText.includes('report') || lowerText.includes('تقارير') || lowerText.includes('ريبورت')) {
     return 'تقارير';
   }
 
-  // 10. Projects
+  // 9. Projects
   if (lowerText.includes('مشروع') || lowerText.includes('project') || lowerText.includes('بروجكت') || lowerText.includes('مشروع تخرج')) {
     return 'مشاريع';
   }
 
-  // 11. Homework / General tasks
-  if (lowerText.includes('واجب') || lowerText.includes('تكليف') || lowerText.includes('assignment') || lowerText.includes('homework') || lowerText.includes('تفريغ') || lowerText.includes('تعديل ملف') || lowerText.includes('تعبئة') || lowerText.includes('اسئلة الفصل') || lowerText.includes('أسئلة الفصل') || lowerText.includes('اسئله الفصل') || lowerText.includes('أسئله الفصل') || lowerText.includes('اسئله') || lowerText.includes('أسئله')) {
+  // 10. Homework / General tasks
+  if (lowerText.includes('واجب') || lowerText.includes('تكليف') || lowerText.includes('assignment') || lowerText.includes('homework') || lowerText.includes('تفريغ') || lowerText.includes('تعديل ملف') || lowerText.includes('تعبئة')) {
     return 'واجبات';
   }
 
-  // 12. Exams & Quizzes
+  // 11. Exams & Quizzes
   if (lowerText.includes('اختبار') || lowerText.includes('كويز') || lowerText.includes('فاينل') || lowerText.includes('ميد') || lowerText.includes('exam') || lowerText.includes('quiz') || lowerText.includes('امتحان')) {
     return 'اختبارات';
   }
 
-  // 13. Presentations
-  if (lowerText.includes('بوربوينت') || lowerText.includes('عرض تقديمي') || lowerText.includes('برزنتيشن') || lowerText.includes('presentation') || lowerText.includes('عرض') || lowerText.includes('سلايدات') || lowerText.includes('شرائح')) {
+  // 12. Presentations
+  if (lowerText.includes('بوربوينت') || lowerText.includes('عرض تقديمي') || lowerText.includes('برزنتيشن') || lowerText.includes('presentation') || lowerText.includes('سلايدات') || lowerText.includes('شرائح')) {
     return 'عروض';
   }
 
-  // 14. Mathematics
-  if (lowerText.includes('رياضيات') || lowerText.includes('math') || lowerText.includes('calculus') || lowerText.includes('حسبان') || lowerText.includes('احصاء') || lowerText.includes('إحصاء') || lowerText.includes('spss') || lowerText.includes('ماث') || lowerText.includes('معادلات') || lowerText.includes('تكامل') || lowerText.includes('تفاضل') || lowerText.includes('جبر') || lowerText.includes('رسم هندسي')) {
+  // 13. Mathematics
+  if (lowerText.includes('رياضيات') || lowerText.includes('math') || lowerText.includes('calculus') || lowerText.includes('حسبان') || lowerText.includes('احصاء') || lowerText.includes('إحصاء') || lowerText.includes('spss') || lowerText.includes('ماث') || lowerText.includes('معادلات') || lowerText.includes('تكامل') || lowerText.includes('تفاضل') || lowerText.includes('جبر') || lowerText.includes('رسم هندسي') || lowerText.includes('تحليل احصائي') || lowerText.includes('تحليل إحصائي')) {
     return 'رياضيات';
   }
 
-  // 15. Translation
-  if (lowerText.includes('ترجمة') || lowerText.includes('translation') || lowerText.includes('تعبير باللغة الانجليزية') || lowerText.includes('تعبير بالانجليزي')) {
+  // 14. Translation
+  if (lowerText.includes('ترجمة') || lowerText.includes('ترجمه') || lowerText.includes('translation') || lowerText.includes('تعبير بالانجليزي')) {
     return 'ترجمة';
   }
 
-  // 16. Word / Excel
-  if (lowerText.includes('وورد') || lowerText.includes('word') || lowerText.includes('اكسل') || lowerText.includes('excel')) {
+  // 15. Word / Excel
+  if (lowerText.includes('وورد') || lowerText.includes('اكسل') || lowerText.includes('excel')) {
     return 'واجبات';
   }
 
@@ -273,29 +393,30 @@ const detectServiceType = (text) => {
 };
 
 /**
- * Enhanced keyword-based fallback classifier.
- * Requires BOTH an intent keyword AND an academic keyword to classify as a request.
- * @param {string} messageText
- * @returns {Object} Classification result
- */
-/**
- * Helper to count how many distinct academic service categories are matched in the text.
- * Listing 4+ different subjects/services (e.g. math, physics, coding, sick leave) is a strong advertiser indicator.
+ * Count how many distinct academic service categories are mentioned in the text.
+ * Listing 4+ different subjects/services is a strong advertiser indicator.
  * @param {string} text
- * @returns {number} count of unique matched categories
+ * @returns {number}
  */
 const countDetectedServiceTypes = (text) => {
   const lowerText = text.toLowerCase();
   let count = 0;
   const categories = [
-    ['سكليف', 'سكاليف', 'عذر طبي', 'تقرير طبي'],
-    ['برمجة', 'بايثون', 'جاوا', 'code'],
-    ['بحث', 'بحوث', 'research'],
-    ['محاسبة', 'تكاليف', 'جدوى'],
-    ['رياضيات', 'ماث', 'معادلات'],
-    ['ترجمة', 'translation'],
-    ['تصميم', 'كانفا', 'فوتوشوب'],
-    ['كويز', 'اختبار', 'امتحان'],
+    ['سكليف', 'سكاليف', 'عذر طبي', 'تقرير طبي', 'اجازة مرضية', 'إجازة مرضية'],
+    ['برمجة', 'بايثون', 'جافا', 'code', 'python'],
+    ['بحث', 'بحوث', 'research', 'بحث علمي'],
+    ['محاسبة', 'تكاليف', 'جدوى', 'اقتصاد', 'مالية'],
+    ['رياضيات', 'ماث', 'معادلات', 'احصاء', 'إحصاء'],
+    ['ترجمة', 'ترجمه', 'translation'],
+    ['تصميم', 'كانفا', 'فوتوشوب', 'فيتشوب', 'انفوجرافيك'],
+    ['كويز', 'اختبار', 'امتحان', 'فاينل', 'ميد'],
+    ['واجب', 'تكليف', 'واجبات', 'assignment', 'homework'],
+    ['مشروع', 'بروجكت', 'مشاريع', 'project', 'مشروع تخرج'],
+    ['بوربوينت', 'برزنتيشن', 'عرض تقديمي', 'سلايدات'],
+    ['تقرير', 'تقارير', 'ريبورت', 'report'],
+    ['cv', 'سيرة ذاتية', 'سيره ذاتيه'],
+    ['تدريب', 'تعاوني', 'ميداني', 'تمهير'],
+    ['تلخيص', 'ملخص'],
   ];
   categories.forEach(cat => {
     if (cat.some(kw => lowerText.includes(kw))) {
@@ -305,27 +426,28 @@ const countDetectedServiceTypes = (text) => {
   return count;
 };
 
+// ─── Enhanced Keyword Classifier ──────────────────────────────────────────────
 /**
- * Enhanced keyword-based fallback classifier.
- * Requires BOTH an intent keyword AND an academic keyword to classify as a request.
- * Incorporates structural scoring to reject long spam advertiser posts containing emojis, lists of subjects, and repeated links/handles.
+ * Enhanced keyword-based classifier with multi-tier intent analysis.
+ * Uses strong/medium/weak intent separation and structural advertiser detection.
  * @param {string} messageText
  * @returns {Object} Classification result
  */
 const keywordFallback = (messageText) => {
   const trimmedText = messageText.trim();
-  const matchedAdvertiserKws = findMatchingKeywords(trimmedText, ADVERTISER_KEYWORDS);
-  const matchedIntentKws = findMatchingKeywords(trimmedText, INTENT_KEYWORDS);
-  const matchedAcademicKws = findMatchingKeywords(trimmedText, ACADEMIC_KEYWORDS);
 
-  // ─── Structural Advertiser Scoring ──────────────────────────────────────────
+  // ─── Advertiser Scoring (cumulative) ────────────────────────────────────────
   let advertiserScore = 0;
 
-  // 1. Keyword Matches (1.5 points per ad keyword matched)
+  // 1. Keyword Matches
+  const matchedAdvertiserKws = findMatchingKeywords(trimmedText, ADVERTISER_KEYWORDS);
   advertiserScore += matchedAdvertiserKws.length * 1.5;
 
-  // 2. Emoji Density & Count
-  // Matches typical emojis and decorative symbols used in ads
+  // 2. Regex pattern matches (very strong signal)
+  const patternMatches = countAdvertiserPatterns(trimmedText);
+  advertiserScore += patternMatches * 2.5;
+
+  // 3. Emoji Density
   const emojiMatches = trimmedText.match(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2B06}\u{2190}-\u{21FF}]/gu);
   const emojiCount = emojiMatches ? emojiMatches.length : 0;
   if (emojiCount >= 10) {
@@ -334,7 +456,7 @@ const keywordFallback = (messageText) => {
     advertiserScore += 2.0;
   }
 
-  // 3. Repeated Contact/Handles (e.g. repeated telegram usernames or whatsapp links)
+  // 4. Repeated Contact/Handles
   const usernameMatches = trimmedText.match(/@[a-zA-Z0-9_]+/g);
   if (usernameMatches) {
     const usernameCounts = {};
@@ -343,41 +465,79 @@ const keywordFallback = (messageText) => {
     });
     const maxRepetitions = Math.max(...Object.values(usernameCounts));
     if (maxRepetitions >= 3) {
-      advertiserScore += 4.0; // Same handle repeated multiple times is a signature ad structure
+      advertiserScore += 4.0;
     } else if (usernameMatches.length >= 3) {
-      advertiserScore += 2.0; // Multiple different handles
+      advertiserScore += 2.0;
     }
   }
 
-  // WhatsApp / External links
-  if (/wa\.me|api\.whatsapp|chat\.whatsapp|t\.me/i.test(trimmedText)) {
-    // Note: only add score if there's no question intent, since students might post links occasionally
-    // but advertisers always have links.
-    advertiserScore += 2.5;
+  // 5. WhatsApp / External links
+  if (/wa\.me|api\.whatsapp|chat\.whatsapp/i.test(trimmedText)) {
+    advertiserScore += 3.0;
   }
 
-  // 4. Multi-subject listing
+  // 6. Multi-subject listing
   const serviceTypesCount = countDetectedServiceTypes(trimmedText);
   if (serviceTypesCount >= 4) {
-    advertiserScore += 3.0; // A single student doesn't request 4+ completely different subjects in one message
+    advertiserScore += 4.0;
+  } else if (serviceTypesCount >= 3) {
+    advertiserScore += 2.0;
   }
 
-  // 5. Length Check (ads are typically very long paragraphs)
-  if (trimmedText.length > 500) {
+  // 7. Length + service listing = strong ad signal
+  if (trimmedText.length > 400 && serviceTypesCount >= 2) {
+    advertiserScore += 3.0;
+  } else if (trimmedText.length > 500) {
     advertiserScore += 1.5;
   }
 
-  // Determine advertiser status based on cumulative score (threshold = 3.0)
+  // 8. Bullet points / list structure (common in ads)
+  const bulletCount = (trimmedText.match(/[•●▪▸►★✅✨🔹🔸◾◽⚡⭐]/g) || []).length;
+  if (bulletCount >= 3) {
+    advertiserScore += 2.5;
+  }
+
+  // 9. "For contact on private" pattern (ads often end this way)
+  if (/للتواصل\s+(والطلب\s+)?على\s+الخاص/i.test(trimmedText)) {
+    advertiserScore += 3.0;
+  }
+
   const isAdvertiser = advertiserScore >= 3.0;
 
-  // Smart student posting detection:
-  // 1. Classic case: has intent (e.g. ابي, احتاج) AND academic topic (e.g. واجب, ماث)
-  // 2. Noun-first case: starts with a request noun (e.g. واجب محاسبة, تكليف فيزياء) and has academic keywords
-  const startsWithRequestNoun = /^(واجب|تكليف|بحث|مشروع|بروجكت|تقرير|سيرة|سيره|ترجمة|ترجمه|تلخيص|عذر|سكليف|سكاليف|سيكليف|لاب|كويز|رسم|سلايدات|تفريغ|تصميم|حل|مطلوب)\s+/i.test(trimmedText);
-  
-  const hasIntentAndAcademic = matchedIntentKws.length > 0 && matchedAcademicKws.length > 0;
-  
-  const isRequest = (hasIntentAndAcademic || (startsWithRequestNoun && matchedAcademicKws.length > 0)) && !isAdvertiser;
+  // ─── Request Intent Analysis ────────────────────────────────────────────────
+  const matchedStrongIntent = findMatchingKeywords(trimmedText, STRONG_INTENT_KEYWORDS);
+  const matchedMediumIntent = findMatchingKeywords(trimmedText, MEDIUM_INTENT_KEYWORDS);
+  const matchedWeakIntent = findMatchingKeywords(trimmedText, WEAK_INTENT_KEYWORDS);
+  const matchedAcademicKws = findMatchingKeywords(trimmedText, ACADEMIC_KEYWORDS);
+
+  // Starts with a request noun pattern
+  const startsWithRequestNoun = /^(واجب|تكليف|بحث|مشروع|بروجكت|تقرير|سيرة|سيره|ترجمة|ترجمه|تلخيص|عذر|سكليف|سكاليف|سيكليف|لاب|كويز|رسم|سلايدات|تفريغ|تصميم|حل|مطلوب|محتاج|احتاج|أحتاج)\s+/i.test(trimmedText);
+
+  // Calculate intent score
+  let intentScore = 0;
+  intentScore += matchedStrongIntent.length * 30;     // Very strong signal
+  intentScore += matchedMediumIntent.length * 15;     // Medium signal
+  intentScore += matchedWeakIntent.length * 5;        // Weak signal
+  intentScore += matchedAcademicKws.length * 12;      // Academic context
+  if (startsWithRequestNoun) intentScore += 20;       // Starts with noun
+
+  // Short message bonus (typical real requests are short)
+  if (trimmedText.length < 100 && matchedAcademicKws.length > 0) {
+    intentScore += 10;
+  }
+
+  // Penalty for long messages without strong intent
+  if (trimmedText.length > 300 && matchedStrongIntent.length === 0) {
+    intentScore -= 15;
+  }
+
+  // Determine if it's a request
+  const hasStrongSignal = matchedStrongIntent.length > 0 && matchedAcademicKws.length > 0;
+  const hasMediumSignal = matchedMediumIntent.length > 0 && matchedAcademicKws.length > 0;
+  const hasNounStart = startsWithRequestNoun && matchedAcademicKws.length > 0;
+  const hasWeakSignal = matchedWeakIntent.length > 0 && matchedAcademicKws.length >= 2;
+
+  const isRequest = (hasStrongSignal || hasMediumSignal || hasNounStart || hasWeakSignal) && !isAdvertiser;
 
   const serviceType = isRequest ? detectServiceType(trimmedText) : null;
 
@@ -389,12 +549,22 @@ const keywordFallback = (messageText) => {
     priority = 'LOW';
   }
 
-  const allMatchedKeywords = [...matchedIntentKws, ...matchedAcademicKws].slice(0, 10);
-  const confidenceScore = isRequest
-    ? Math.min(0.5 + (matchedIntentKws.length * 0.1) + (matchedAcademicKws.length * 0.08) + (startsWithRequestNoun ? 0.15 : 0), 0.85)
-    : isAdvertiser
-    ? 0.9
-    : 0.1;
+  // Confidence score calculation (0.0 - 1.0)
+  let confidenceScore;
+  if (isRequest) {
+    const rawScore = Math.min(intentScore, 100) / 100;
+    confidenceScore = Math.min(0.4 + (rawScore * 0.5), 0.88);
+  } else if (isAdvertiser) {
+    confidenceScore = Math.min(0.5 + (advertiserScore * 0.05), 0.95);
+  } else {
+    confidenceScore = 0.1;
+  }
+
+  const allMatchedKeywords = [
+    ...matchedStrongIntent,
+    ...matchedMediumIntent,
+    ...matchedAcademicKws,
+  ].slice(0, 10);
 
   return {
     isRequest,
@@ -404,10 +574,22 @@ const keywordFallback = (messageText) => {
     keywords: allMatchedKeywords,
     priority,
     classifiedBy: 'keyword_fallback',
+    _debug: {
+      intentScore,
+      advertiserScore,
+      strongIntent: matchedStrongIntent.length,
+      mediumIntent: matchedMediumIntent.length,
+      weakIntent: matchedWeakIntent.length,
+      academicKws: matchedAcademicKws.length,
+      serviceTypesCount: countDetectedServiceTypes(trimmedText),
+    },
   };
 };
 
-// ─── OpenAI Client ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TIER 3: OPENAI — For ambiguous messages
+// ═══════════════════════════════════════════════════════════════════════════════
+
 let openaiClient = null;
 
 const getOpenAIClient = () => {
@@ -417,7 +599,6 @@ const getOpenAIClient = () => {
   return openaiClient;
 };
 
-// ─── Enhanced System Prompt ───────────────────────────────────────────────────
 const SYSTEM_PROMPT = `أنت محلل رسائل ذكي متخصص في اكتشاف الطلبات التعليمية والأكاديمية في مجموعات تيليجرام.
 
 ## مهمتك الأساسية:
@@ -434,40 +615,30 @@ const SYSTEM_PROMPT = `أنت محلل رسائل ذكي متخصص في اكت�
 - "مين يعرف يسوي لي مشروع التخرج؟"
 - "احتاج شخص يجهز لي عرض بكرة"
 - "أبغى مساعدة في حل الواجب"
-- "عندي مادة صعبة وأحتاج أحد يساعدني فيها"
 - "ابي مختص يحل واجب برمجة"
 - "محتاج مساعدة في بحث"
 - "مين يسوي لي CV"
-- "عندي فاينل بكره احتاج احد يساعدني"
 - "فزعتكم يا شباب عندي تكليف لازم يتسلم اليوم"
-- "ابغى احد يترجم لي بحث"
-- "مطلوب شخص يسوي لي بوربوينت"
-- "احد يقدر يحل لي لاب فيزياء"
+- "حد يعرف شخص ثقه يسوي سكاليف"
+- "ابي إجازة مرضية"
 
 ## ما لا يُعتبر طلب (isRequest = false):
-1. **الإعلانات**: شخص يعرض خدماته (نحل واجبات، تواصل معنا، أفضل الأسعار)
+1. **الإعلانات**: شخص يعرض خدماته (أقدم لكم، نحل واجبات، تواصل معنا، أفضل الأسعار)
 2. **الدردشة العادية**: سلام، شكر، نقاش، سؤال عام
 3. **الأسئلة المعرفية**: "من يعرف الدكتور؟"، "وش رأيكم بالمادة؟"
 4. **الروابط الترويجية**: روابط تسويق، عروض خدمات
-5. **الرسائل الآلية**: رسائل بوتات أو رسائل منسوخة
-6. **الردود القصيرة**: "تمام"، "اوكي"، "شكراً"
-7. **النقاشات الأكاديمية**: مناقشة مادة بدون طلب مساعدة
 
-### أمثلة رسائل مرفوضة:
-- "من يعرف الدكتور؟" → سؤال عام وليس طلب
+### أمثلة رسائل يجب رفضها:
+- "أقدم لكم جميع الخدمات الطلابية والأكاديمية" → إعلان
 - "نحل جميع الواجبات تواصل واتساب" → إعلان
-- "السلام عليكم" → تحية
-- "وش رأيكم بالمادة؟" → نقاش
-- "الله يوفقكم" → دعاء
 - "متى موعد الاختبار؟" → سؤال معلوماتي
 - "هل أحد أخذ هذي المادة؟" → سؤال عام
-- "فريقنا المتخصص يقدم لكم خدمات أكاديمية" → إعلان
 
 ## القاعدة الذهبية:
 **افهم نية الشخص وليس الكلمات فقط**. الشخص يجب أن يكون يطلب من شخص آخر أن ينفذ له عمل أكاديمي محدد.
 
 ## أنواع الخدمات:
-برمجة، بحث، عروض، CV، رياضيات، واجبات، اختبارات، مشاريع، تقارير، ترجمة، طب، تصميم، سكليف، تدريب
+برمجة، بحث، عروض، CV، رياضيات، واجبات، اختبارات، مشاريع، تقارير، ترجمة، طب، تصميم، سكليف، تدريب، محاسبة
 
 ## الأولوية:
 - URGENT: يحتاج اليوم/بكرة/عاجل/ضروري
@@ -485,10 +656,15 @@ const SYSTEM_PROMPT = `أنت محلل رسائل ذكي متخصص في اكت�
   "reasoning": "سبب موجز للتصنيف بالعربي"
 }`;
 
-// ─── Main Classifier ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  MAIN CLASSIFIER
+// ═══════════════════════════════════════════════════════════════════════════════
+
 /**
- * Classifies a Telegram message using OpenAI GPT-4o-mini.
- * Falls back to keyword matching if OpenAI is unavailable or fails.
+ * Classifies a Telegram message using a 3-tier approach:
+ * 1. Pre-filter: reject obviously irrelevant messages
+ * 2. Keyword analysis: smart intent + academic matching
+ * 3. OpenAI: for ambiguous messages (confidence 0.4–0.7)
  *
  * @param {string} messageText - The raw message text to classify
  * @param {Object} [context] - Optional context (senderName, groupName)
@@ -508,7 +684,7 @@ const classifyMessage = async (messageText, context = {}) => {
     };
   }
 
-  // Pre-filter: quickly reject obvious non-requests
+  // TIER 1: Pre-filter — quickly reject obvious non-requests
   if (shouldSkipMessage(messageText)) {
     logger.debug('Message pre-filtered (greeting/reaction/too short)');
     return {
@@ -522,25 +698,43 @@ const classifyMessage = async (messageText, context = {}) => {
     };
   }
 
-  // Fast-pass: Check keywords first for speed and direct handling of clear requests
+  // TIER 2: Keyword + Intent Analysis
   const kResult = keywordFallback(messageText);
-  if (kResult.isRequest) {
-    kResult.classifiedBy = 'keyword_fastpass';
-    logger.debug('Message classified via fast-pass keywords', {
-      serviceType: kResult.serviceType,
-      confidence: kResult.confidenceScore,
-      keywords: kResult.keywords,
+
+  // If clearly an advertiser, reject immediately
+  if (kResult.isAdvertiser) {
+    kResult.classifiedBy = 'keyword_advertiser_reject';
+    logger.debug('Message classified as advertiser via keywords', {
+      advertiserScore: kResult._debug?.advertiserScore,
     });
     return kResult;
   }
 
-  const client = getOpenAIClient();
-
-  if (!client) {
-    logger.warn('OpenAI client not available, using keyword fallback');
+  // If clearly a request with high confidence, accept immediately
+  if (kResult.isRequest && kResult.confidenceScore >= 0.70) {
+    kResult.classifiedBy = 'keyword_fastpass';
+    logger.debug('Message classified via keyword fast-pass', {
+      serviceType: kResult.serviceType,
+      confidence: kResult.confidenceScore,
+      intentScore: kResult._debug?.intentScore,
+    });
     return kResult;
   }
 
+  // TIER 3: OpenAI for ambiguous cases
+  const client = getOpenAIClient();
+
+  // If no OpenAI client, return keyword result as-is
+  if (!client) {
+    if (kResult.isRequest) {
+      kResult.classifiedBy = 'keyword_fastpass';
+    }
+    return kResult;
+  }
+
+  // Use OpenAI for ambiguous messages:
+  // - Messages with some intent but low confidence
+  // - Messages with no clear classification
   try {
     const userContent = context.groupName
       ? `المجموعة: ${context.groupName}\nالمرسل: ${context.senderName || 'مجهول'}\n\nالرسالة:\n${messageText}`
@@ -562,13 +756,12 @@ const classifyMessage = async (messageText, context = {}) => {
 
     const parsed = JSON.parse(content);
 
-    // Validate required fields
     const result = {
       isRequest: Boolean(parsed.isRequest),
       isAdvertiser: Boolean(parsed.isAdvertiser),
       serviceType: parsed.serviceType && SERVICE_TYPES.includes(parsed.serviceType)
         ? parsed.serviceType
-        : null,
+        : (parsed.isRequest ? detectServiceType(messageText) : null),
       confidenceScore: Math.min(Math.max(Number(parsed.confidenceScore) || 0, 0), 1),
       keywords: Array.isArray(parsed.keywords) ? parsed.keywords.slice(0, 8) : [],
       priority: ['URGENT', 'NORMAL', 'LOW'].includes(parsed.priority) ? parsed.priority : 'NORMAL',
@@ -578,6 +771,7 @@ const classifyMessage = async (messageText, context = {}) => {
 
     logger.debug('Message classified by OpenAI', {
       isRequest: result.isRequest,
+      isAdvertiser: result.isAdvertiser,
       serviceType: result.serviceType,
       confidence: result.confidenceScore,
       reasoning: result.reasoning,
@@ -585,10 +779,13 @@ const classifyMessage = async (messageText, context = {}) => {
 
     return result;
   } catch (err) {
-    logger.error('OpenAI classification failed, falling back to keywords', {
+    logger.error('OpenAI classification failed, using keyword result', {
       error: err.message,
     });
-    return keywordFallback(messageText);
+    if (kResult.isRequest) {
+      kResult.classifiedBy = 'keyword_fastpass';
+    }
+    return kResult;
   }
 };
 
