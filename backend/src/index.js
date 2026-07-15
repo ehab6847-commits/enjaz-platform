@@ -199,20 +199,7 @@ httpServer.listen(PORT, async () => {
   logger.info(`🚀 Enjaz Backend running on port ${PORT}`);
   logger.info(`📡 Environment: ${process.env.NODE_ENV}`);
 
-  // Run Prisma DB Push programmatically on startup
-  try {
-    logger.info('🔄 Running database schema migration (prisma db push)...');
-    const { execSync } = require('child_process');
-    // Prepare env variables, fallback to DIRECT_URL for migration to bypass PgBouncer if present
-    const migrationEnv = { ...process.env };
-    if (process.env.DIRECT_URL) {
-      migrationEnv.DATABASE_URL = process.env.DIRECT_URL;
-    }
-    execSync('npx prisma db push --accept-data-loss', { env: migrationEnv, stdio: 'inherit' });
-    logger.info('✅ Database schema migration completed successfully');
-  } catch (migErr) {
-    logger.error('❌ Database schema migration failed:', { error: migErr.message });
-  }
+
 
 
   // Test database connection (don't crash if it fails)
