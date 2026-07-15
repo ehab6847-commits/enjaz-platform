@@ -197,11 +197,63 @@ const PORT = process.env.PORT || 5000;
 
 httpServer.listen(PORT, async () => {
   logger.info(`🚀 Enjaz Backend running on port ${PORT}`);
-  logger.info(`📡 Environment: ${process.env.NODE_ENV}`);
+  logger.info(`📡 Environment: ${process.env.NODE_ENV}`);  // Run raw SQL migrations asynchronously to avoid blocking port scan
+  setTimeout(async () => {
+    const db = require('./config/database');
+    try {
+      logger.info('🔄 Running raw SQL database migrations...');
+      
+      // 1. Add columns to requests
+      await db.$executeRawUnsafe(`ALTER TABLE "requests" ADD COLUMN IF NOT EXISTS "adminFeedback" TEXT;`).catch(()=>{});
+      await db.$executeRawUnsafe(`ALTER TABLE "requests" ADD COLUMN IF NOT EXISTS "groupUsername" TEXT;`).catch(()=>{});
+      await db.$executeRawUnsafe(`ALTER TABLE "requests" ADD COLUMN IF NOT EXISTS "groupLink" TEXT;`).catch(()=>{});
+      await db.$executeRawUnsafe(`ALTER TABLE "requests" ADD COLUMN IF NOT EXISTS "messageId" TEXT;`).catch(()=>{});
 
+      // 2. Add columns to monitored_groups
+      await db.$executeRawUnsafe(`ALTER TABLE "monitored_groups" ADD COLUMN IF NOT EXISTS "groupUsername" TEXT;`).catch(()=>{});
+      await db.$executeRawUnsafe(`ALTER TABLE "monitored_groups" ADD COLUMN IF NOT EXISTS "groupLink" TEXT;`).catch(()=>{});
+      await db.$executeRawUnsafe(`ALTER TABLE "monitored_groups" ADD COLUMN IF NOT EXISTS "isPublic" BOOLEAN DEFAULT false;`).catch(()=>{});
 
+      // 3. Create classification_feedback table
+      await db.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "classification_feedback" (
+          "id" TEXT PRIMARY KEY,
+          "requestId" TEXT NOT NULL REFERENCES "requests"("id") ON DELETE CASCADE,
+          "adminId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE RESTRICT,
+          "feedbackType" TEXT NOT NULL,
+          "originalScore" DOUBLE PRECISION NOT NULL,
+          "notes" TEXT,
+          "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+      `).catch(()=>{});
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "classification_feedback_feedbackType_idx" ON "classification_feedback"("feedbackType");`).catch(()=>{});
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "classification_feedback_createdAt_idx" ON "classification_feedback"("createdAt");`).catch(()=>{});
 
+      // 4. Create processing_errors table
+      await db.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "processing_errors" (
+          "id" TEXT PRIMARY KEY,
+          "messageText" TEXT,
+          "groupName" TEXT,
+          "groupId" TEXT,
+          "accountPhone" TEXT,
+          "errorType" TEXT NOT NULL,
+          "errorMessage" TEXT NOT NULL,
+          "errorStack" TEXT,
+          "rawData" TEXT,
+          "resolved" BOOLEAN DEFAULT false,
+          "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+      `).catch(()=>{});
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "processing_errors_errorType_idx" ON "processing_errors"("errorType");`).catch(()=>{});
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "processing_errors_createdAt_idx" ON "processing_errors"("createdAt");`).catch(()=>{});
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "processing_errors_resolved_idx" ON "processing_errors"("resolved");`).catch(()=>{});
 
+      logger.info('✅ Raw SQL database migrations completed');
+    } catch (migErr) {
+      logger.error('❌ Raw SQL database migrations failed:', { error: migErr.message });
+    }
+  }, 1000);
   // Test database connection (don't crash if it fails)
   const db = require('./config/database');
   const dbConnected = await db.testConnection();
