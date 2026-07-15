@@ -10,10 +10,12 @@ const logger = require('../../config/logger');
 const { classifyMessage } = require('../ai/classifier');
 const { createNotification } = require('../notifications/notifier');
 const { emitToAdmins } = require('../../utils/socket');
+const MessageQueue = require('./messageQueue');
 
 // ─── Active Clients Registry ───────────────────────────────────────────────────
 /** @type {Map<string, TelegramClient>} accountId -> TelegramClient */
 const activeClients = new Map();
+const messageQueue = new MessageQueue(handleNewMessage, 2);
 
 // ─── In-Memory Dedup Cache ────────────────────────────────────────────────────
 // Prevents the same message from being processed twice when multiple accounts
@@ -556,9 +558,9 @@ const createClientForAccount = async (account) => {
 
     logger.info(`✅ Connected Telegram account: ${account.phone}`);
 
-    // Register message handler
+    // Register message handler via queue to throttle concurrency
     client.addEventHandler(
-      (event) => handleNewMessage(event, account, client),
+      (event) => messageQueue.enqueue(event, account, client),
       new NewMessage({ incoming: true })
     );
 

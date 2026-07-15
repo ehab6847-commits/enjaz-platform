@@ -364,9 +364,10 @@ export default function LogsPage() {
       {/* Pagination */}
       {pagination && pagination.totalPages > 1 && (
         <Pagination
-          currentPage={pagination.page}
-          totalPages={pagination.totalPages}
-          onPageChange={setPage}
+          page={pagination.page}
+          total={pagination.total}
+          pageSize={pagination.limit}
+          onChange={setPage}
         />
       )}
     </div>

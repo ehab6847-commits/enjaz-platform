@@ -5,7 +5,7 @@ const router = express.Router();
 const { z } = require('zod');
 
 const requestsController = require('../controllers/requests.controller');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireAdmin } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 
 // ─── Validation Schemas ────────────────────────────────────────────────────────
@@ -65,6 +65,6 @@ router.put('/:id/status', validate({ body: updateStatusSchema }), requestsContro
  * @desc   Delete a request (admin only effectively)
  * @access Private
  */
-router.delete('/:id', requestsController.deleteRequest);
+router.delete('/:id', requireAdmin, requestsController.deleteRequest);
 
 module.exports = router;
