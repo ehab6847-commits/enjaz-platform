@@ -25,8 +25,9 @@ const refreshTokenStore = new Map();
  */
 const logActivity = async (userId, action, details = {}, ip = null) => {
   try {
+    const detailsStr = typeof details === 'object' ? JSON.stringify(details) : details;
     await db.activityLog.create({
-      data: { userId, action, details, ipAddress: ip },
+      data: { userId, action, details: detailsStr, ipAddress: ip },
     });
   } catch (err) {
     logger.error('Failed to log activity', { error: err.message });
