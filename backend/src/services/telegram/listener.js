@@ -140,12 +140,6 @@ const forwardRequestToChannel = async (request) => {
         text: '📱 رسالة خاصة',
         url: `https://t.me/${request.senderUsername}`
       });
-    } else if (request.senderId && request.senderId !== 'unknown') {
-      // tg://user?id= works as a URL button for users without public username
-      buttons.push({
-        text: '📱 رسالة خاصة',
-        url: `tg://user?id=${request.senderId}`
-      });
     }
 
     const reply_markup = buttons.length > 0 ? {
