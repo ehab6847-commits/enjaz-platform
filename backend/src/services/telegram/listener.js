@@ -43,6 +43,20 @@ setInterval(() => {
  */
 const sleep = (seconds) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 
+// ─── HTML escaping helper ──────────────────────────────────────────────────────
+/**
+ * Escapes special HTML characters to prevent Telegram API parsing errors.
+ * @param {string} text
+ * @returns {string}
+ */
+const escapeHtml = (text) => {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+};
+
 // ─── Channel Forwarding Helper ──────────────────────────────────────────────────
 /**
  * Forwards a request to the configured Telegram channel.
@@ -73,6 +87,9 @@ const forwardRequestToChannel = async (request) => {
     } else if (request.senderName && request.senderName !== 'Unknown') {
       displayName = request.senderName.replace(/\s*\([^)]+\)/, '').trim();
     }
+    
+    // Escape display name to avoid HTML parsing errors
+    displayName = escapeHtml(displayName);
 
     // Direct message link
     const directMessageLink = request.senderUsername 
@@ -84,17 +101,21 @@ const forwardRequestToChannel = async (request) => {
       ? `<a href="${directMessageLink}">${displayName}</a>`
       : displayName;
 
+    // Escape message text to avoid HTML parsing errors
+    const escapedMessageText = escapeHtml(request.messageText);
+
     // Format the message — OLD compact format matching user's screenshot
     const formattedMessageLines = [
       `👤 <b>${nameLink}</b>`,
       `المرسل : ID <code>${request.senderId}</code>\n`,
       `نص الرساله :`,
-      request.messageText,
+      escapedMessageText,
     ];
 
     // Add group info if available
     if (request.groupLink) {
-      formattedMessageLines.push(`المجموعة : <a href="${request.groupLink}">${request.groupName || 'مجموعة'}</a>`);
+      const escapedGroupName = escapeHtml(request.groupName || 'مجموعة');
+      formattedMessageLines.push(`المجموعة : <a href="${request.groupLink}">${escapedGroupName}</a>`);
     }
 
     // Add message link
