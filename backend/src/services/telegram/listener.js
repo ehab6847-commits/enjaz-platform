@@ -161,23 +161,48 @@ const forwardRequestToChannel = async (request) => {
  * @returns {Object|null} Parsed details or null
  */
 const parseForwardedFormat = (text) => {
-  if (!text.includes('نص الرساله :')) return null;
+  // Normalize spelling of الرسالة/الرساله and spaces
+  const normalizedText = text.replace(/نص\s+الرسال[ةه]\s*:/i, 'نص الرساله :');
+  if (!normalizedText.includes('نص الرساله :')) return null;
 
   try {
     const lines = text.split('\n');
     let senderName = null;
     let senderId = null;
+    let senderUsername = null;
     let messageText = '';
     let messageLink = null;
 
-    // Find sender name (line starting with 👤)
+    // 1. Extract Sender Name
+    // Pattern A: line starting with 👤
     const senderLine = lines.find(l => l.includes('👤'));
     if (senderLine) {
       senderName = senderLine.replace('👤', '').trim();
     }
+    // Pattern B: line containing الاسم
+    if (!senderName) {
+      const nameLine = lines.find(l => l.startsWith('الاسم :') || l.includes('الاسم:'));
+      if (nameLine) {
+        senderName = nameLine.split(':')[1]?.trim();
+      }
+    }
 
-    // Find sender ID (line containing ID)
-    const idLine = lines.find(l => l.includes('المرسل') && l.includes('ID'));
+    // 2. Extract Username
+    // Check if any line contains @username or if there is a line starting with المرسل
+    const senderFieldLine = lines.find(l => l.startsWith('المرسل :') || l.includes('المرسل:'));
+    if (senderFieldLine) {
+      const fieldVal = senderFieldLine.split(':')[1]?.trim();
+      if (fieldVal && fieldVal.includes('@')) {
+        const match = fieldVal.match(/@(\w+)/);
+        if (match) {
+          senderUsername = match[1];
+        }
+      }
+    }
+
+    // 3. Extract Sender ID
+    // Look for any line containing ID followed by numbers
+    const idLine = lines.find(l => /id/i.test(l) && /\d+/.test(l));
     if (idLine) {
       const match = idLine.match(/\d+/);
       if (match) {
@@ -185,23 +210,29 @@ const parseForwardedFormat = (text) => {
       }
     }
 
-    // Find message text and link
-    const textIndex = text.indexOf('نص الرساله :');
-    const linkIndex = text.indexOf('رابط الرساله :');
+    // 4. Find message text and link
+    const textIndex = normalizedText.indexOf('نص الرساله :');
+    const linkIndex = normalizedText.replace(/رابط\s+الرسال[ةه]\s*:/i, 'رابط الرساله :').indexOf('رابط الرساله :');
 
     if (textIndex !== -1) {
       if (linkIndex !== -1 && linkIndex > textIndex) {
-        messageText = text.substring(textIndex + 'نص الرساله :'.length, linkIndex).trim();
-        messageLink = text.substring(linkIndex + 'رابط الرساله :'.length).trim();
+        messageText = normalizedText.substring(textIndex + 'نص الرساله :'.length, linkIndex).trim();
+        messageLink = normalizedText.substring(linkIndex + 'رابط الرساله :'.length).trim();
       } else {
-        messageText = text.substring(textIndex + 'نص الرساله :'.length).trim();
+        messageText = normalizedText.substring(textIndex + 'نص الرساله :'.length).trim();
       }
+    }
+
+    // Clean up HTML tags from senderName if any
+    if (senderName) {
+      senderName = senderName.replace(/<\/?[^>]+(>|$)/g, "").trim();
     }
 
     if (messageText) {
       return {
-        senderName,
+        senderName: senderName || 'مجهول',
         senderId: senderId || 'unknown',
+        senderUsername: senderUsername || null,
         messageText,
         messageLink
       };
@@ -287,7 +318,7 @@ async function handleNewMessage(event, account, client) {
 
     // ─── Enhanced Sender Extraction (multi-attempt) ────────────────────────────
     let senderName = parsedForward ? parsedForward.senderName : 'مجهول';
-    let senderUsername = null;
+    let senderUsername = parsedForward ? (parsedForward.senderUsername || null) : null;
     let senderId = parsedForward ? parsedForward.senderId : 'unknown';
     let senderPhone = null;
     let messageLink = parsedForward ? parsedForward.messageLink : null;
