@@ -140,19 +140,42 @@ const STRONG_INTENT_KEYWORDS = [
   'يساعدني', 'ساعدوني', 'فزعة', 'فزعه', 'فزعتكم',
   'need help', 'need someone', 'looking for', 'can someone',
   'anyone can', 'do my', 'solve my', 'help me with', 'anyone knows',
+  // ── Gulf dialect additions ──
+  'ابي أحد فاهم', 'ابغا احد يسوي', 'ودي احد يسوي',
+  'ودي أحد', 'ودي حد', 'ودي شخص',
+  'ابي واحد', 'أبي واحد', 'ابغى واحد',
+  'ابي حد فاهم', 'ابغى حد فاهم', 'أبي حد شاطر',
+  'اللي يقدر', 'اللي يعرف', 'اللي فاهم',
+  'لو أحد يقدر', 'لو حد يقدر', 'لو احد يقدر',
+  'حد يقدر يسوي', 'حد يقدر يحل',
+  'محتاج حد', 'محتاج شخص', 'محتاجه شخص',
+  'ابي مساعده', 'أبي مساعدة', 'ابغى مساعده',
+  'يعملي', 'يعمللي', 'يخلصلي', 'يحل لي',
+  'يكتبلي', 'يكتب لي', 'يسوي لي', 'يترجم لي',
+  'يصممي', 'يصمملي', 'يصمم لي',
+  'مين يكتب', 'مين يترجم', 'مين يصمم',
+  'من يكتب', 'من يترجم', 'من يصمم',
+  'احد يحل', 'أحد يحل', 'حد يحل',
+  'احد يكتب', 'حد يكتب', 'أحد يكتب',
+  'ابي اسوي', 'أبي أسوي', 'ابغى اسوي',
+  'كم سعر', 'كم يكلف', 'بكم',
+  'يسوي واجب', 'يحل واجب', 'يسوي بحث', 'يسوي مشروع',
+  'يسوي تقرير', 'يسوي عرض', 'يسوي برزنتيشن',
+  'ابي سكليف', 'أبي سكليف', 'ابغى سكليف',
+  'محتاج سكليف', 'احتاج سكليف', 'أحتاج سكليف',
 ];
 
 // Medium intent: likely a request but needs academic context
 const MEDIUM_INTENT_KEYWORDS = [
   'ابي', 'ابغا', 'ابغى', 'أبي', 'أبغا', 'أبغى',
-  'احتاج', 'أحتاج', 'اريد', 'أريد', 'محتاج',
+  'احتاج', 'أحتاج', 'اريد', 'أريد', 'محتاج', 'محتاجه',
   'مساعدة', 'مساعده', 'مطلوب', 'مطلب',
   'يحل', 'يسوي', 'يكتب', 'يبرمج', 'يصمم', 'يترجم', 'يساعد',
   'مين يعرف', 'مين يقدر', 'مين يترجم', 'مين يصمم', 'مين يبرمج',
   'احد يعرف', 'أحد يعرف', 'حد يعرف', 'حد يقدر',
   'من عنده', 'مين عنده', 'احد عنده', 'أحد عنده',
   'شخص ثقه', 'شخص ثقة', 'شخص موثوق', 'مختص', 'متخصص',
-  'تكفون', 'تكفى',
+  'تكفون', 'تكفى', 'ارجوكم', 'أرجوكم', 'رجاء', 'رجاءً',
   'يفيدني', 'افيدوني', 'أفيدوني',
   'غبت عن', 'صار عندي حرمان', 'حرمان',
   'والدفع للمكافاه', 'والدفع للمكافأة',
@@ -160,6 +183,19 @@ const MEDIUM_INTENT_KEYWORDS = [
   'بعد الدرجه', 'بعد الدرجة',
   'للراتب', 'للمكافاه', 'للمكافأة',
   'مختص الحين', 'من يترجم',
+  // ── Gulf dialect additions ──
+  'ودي', 'ابا', 'أبا', 'ابه', 'أبه',
+  'نبي', 'نبغى', 'نحتاج',
+  'يخلص', 'يخلصني', 'يخلصه', 'يخلصها',
+  'يعمل', 'يعمل لي', 'ممكن حد',
+  'دلوني', 'دلني', 'وجهوني', 'ارشدوني', 'أرشدوني',
+  'يا شباب', 'يا جماعه', 'يا جماعة', 'يالربع', 'يا ربع',
+  'الله يجزاكم', 'الله يعافيكم',
+  'عاد', 'بليز', 'please', 'plz',
+  'لو سمحتوا', 'لوسمحتوا', 'لو سمحتم',
+  'حد سوى', 'حد سوا', 'أحد سوى',
+  'عندكم', 'عندكم أحد', 'فيكم أحد',
+  'حل ماده', 'حل مادة',
 ];
 
 // Weak intent: general question words — only counted with very strong academic match
@@ -217,13 +253,32 @@ const ACADEMIC_KEYWORDS = [
   'تعبير بالانجليزي', 'رسالة ماجستير', 'رسالة دكتوراه',
   'assignment', 'homework', 'project', 'lab', 'quiz',
   'exam', 'presentation', 'thesis', 'research', 'essay', 'calculus',
+  // ── Extended academic subjects ──
+  'شريعة', 'فقه', 'اصول فقه', 'حديث', 'تفسير', 'عقيدة',
+  'تاريخ', 'جغرافيا', 'علم نفس', 'علم اجتماع', 'اجتماعيات',
+  'تربية', 'تعليم', 'منهج', 'منهجية', 'مقرر',
+  'احياء', 'أحياء', 'biology', 'chemistry', 'physics',
+  'اتصالات', 'كهرباء', 'معماري', 'مدني', 'ميكانيكا', 'صناعي',
+  'نتيجة', 'درجة', 'درجات', 'علامة', 'علامات',
+  'جامعة', 'جامعي', 'كلية', 'كليه', 'دبلوم',
+  'ماستر', 'بكالوريوس', 'دكتوراة',
+  'شابتر', 'chapter', 'فصل', 'وحدة', 'unit',
+  'مذكرة', 'مذكره', 'ملزمة', 'ملزمه',
+  'سي شارب', 'c#', 'c++', 'html', 'css', 'javascript', 'js',
+  'sql', 'mysql', 'oracle', 'database',
+  'ارشيف', 'أرشيف', 'مرجع', 'مراجع', 'مصدر', 'مصادر',
+  'matlab', 'ماتلاب', 'اوتوكاد', 'autocad', 'solidworks',
+  'ريفيت', 'revit', 'ساب', 'sap', 'اوراكل',
+  'تمريض', 'صيدلة', 'صيدله', 'طب', 'اسنان', 'أسنان',
+  'بورد', 'سنة تحضيرية', 'سنه تحضيريه', 'تحضيري',
 ];
 
 // ─── Priority Detection Keywords ──────────────────────────────────────────────
 const URGENT_KEYWORDS = [
   'عاجل', 'اليوم', 'الليلة', 'بكره', 'بكرة', 'ضروري', 'asap', 'urgent',
   'نفس اليوم', 'خلال ساعة', 'دقائق', 'الان', 'الآن', 'بسرعة',
-  'قبل بكرة', 'لازم اليوم',
+  'قبل بكرة', 'لازم اليوم', 'الحين', 'ذحين', 'توه', 'توها',
+  'ضروري جدا', 'ضروري جداً', 'محتاجه ضروري', 'لازم',
 ];
 
 const LOW_PRIORITY_KEYWORDS = [
@@ -535,7 +590,7 @@ const keywordFallback = (messageText) => {
   const hasStrongSignal = matchedStrongIntent.length > 0 && matchedAcademicKws.length > 0;
   const hasMediumSignal = matchedMediumIntent.length > 0 && matchedAcademicKws.length > 0;
   const hasNounStart = startsWithRequestNoun && matchedAcademicKws.length > 0;
-  const hasWeakSignal = matchedWeakIntent.length > 0 && matchedAcademicKws.length >= 2;
+  const hasWeakSignal = matchedWeakIntent.length > 0 && matchedAcademicKws.length >= 1;
 
   const isRequest = (hasStrongSignal || hasMediumSignal || hasNounStart || hasWeakSignal) && !isAdvertiser;
 
@@ -711,7 +766,7 @@ const classifyMessage = async (messageText, context = {}) => {
   }
 
   // If clearly a request with high confidence, accept immediately
-  if (kResult.isRequest && kResult.confidenceScore >= 0.70) {
+  if (kResult.isRequest && kResult.confidenceScore >= 0.55) {
     kResult.classifiedBy = 'keyword_fastpass';
     logger.debug('Message classified via keyword fast-pass', {
       serviceType: kResult.serviceType,

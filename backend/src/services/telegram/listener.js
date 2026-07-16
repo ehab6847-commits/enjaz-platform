@@ -15,7 +15,7 @@ const MessageQueue = require('./messageQueue');
 // ─── Active Clients Registry ───────────────────────────────────────────────────
 /** @type {Map<string, TelegramClient>} accountId -> TelegramClient */
 const activeClients = new Map();
-const messageQueue = new MessageQueue(handleNewMessage, 2);
+const messageQueue = new MessageQueue(handleNewMessage, 8);
 
 // ─── In-Memory Dedup Cache ────────────────────────────────────────────────────
 // Prevents the same message from being processed twice when multiple accounts
@@ -290,6 +290,10 @@ async function handleNewMessage(event, account, client) {
     let senderUsername = null;
     let senderId = parsedForward ? parsedForward.senderId : 'unknown';
     let senderPhone = null;
+    let messageLink = parsedForward ? parsedForward.messageLink : null;
+    let groupUsername = null;
+    let groupLink = null;
+    const rawMessageId = message.id ? String(message.id) : null;
 
     // Extract username from parsed name if it contains @
     if (parsedForward && parsedForward.senderName) {
@@ -305,30 +309,48 @@ async function handleNewMessage(event, account, client) {
         senderId = String(message.fromId.userId || message.fromId.channelId || 'unknown');
       }
 
-      // Attempt 1: getSender() with 5s timeout
-      let sender = null;
-      try {
-        sender = await Promise.race([
-          event.getSender(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-        ]);
-      } catch (e) {
-        logger.debug(`getSender() failed for msg in ${groupName}: ${e.message}`);
-      }
-
-      // Attempt 2: client.getEntity() if getSender() failed
-      if (!sender && message.fromId && client) {
+      // ─── PARALLEL sender + chat extraction for SPEED ─────────────────────────
+      const FAST_TIMEOUT = 3000; // 3s max
+      const senderPromise = (async () => {
+        // Attempt 1: getSender()
         try {
-          sender = await Promise.race([
-            client.getEntity(message.fromId),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 4000))
+          return await Promise.race([
+            event.getSender(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), FAST_TIMEOUT))
           ]);
         } catch (e) {
-          logger.debug(`getEntity() fallback failed for msg in ${groupName}: ${e.message}`);
+          logger.debug(`getSender() failed: ${e.message}`);
         }
-      }
+        // Attempt 2: client.getEntity() fallback
+        if (message.fromId && client) {
+          try {
+            return await Promise.race([
+              client.getEntity(message.fromId),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+            ]);
+          } catch (e) {
+            logger.debug(`getEntity() fallback failed: ${e.message}`);
+          }
+        }
+        return null;
+      })();
 
-      // Extract all available info from sender
+      const chatPromise = (async () => {
+        try {
+          return await Promise.race([
+            event.getChat(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), FAST_TIMEOUT))
+          ]);
+        } catch (e) {
+          logger.debug(`getChat() failed: ${e.message}`);
+          return null;
+        }
+      })();
+
+      // Run BOTH in parallel — saves ~3-5 seconds per message!
+      const [sender, chat] = await Promise.all([senderPromise, chatPromise]);
+
+      // Extract sender info
       if (sender) {
         senderPhone = sender.phone || null;
         const firstName = sender.firstName || '';
@@ -352,48 +374,25 @@ async function handleNewMessage(event, account, client) {
           messageId: message.id,
         });
       }
-    }
 
-    // Build links
-    const profileLink = senderUsername
-      ? `https://t.me/${senderUsername}`
-      : (senderId !== 'unknown' ? `tg://user?id=${senderId}` : null);
-    
-    // ─── Enhanced Group & Message Link Extraction ─────────────────────────────
-    let messageLink = null;
-    let groupUsername = null;
-    let groupLink = null;
-    const rawMessageId = message.id ? String(message.id) : null;
-
-    if (parsedForward) {
-      messageLink = parsedForward.messageLink;
-    } else {
-      // Get chat entity for group info
-      let chat = null;
-      try {
-        chat = await Promise.race([
-          event.getChat(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
-        ]);
-      } catch (e) {
-        logger.debug(`getChat() failed for msg in ${groupName}: ${e.message}`);
-      }
-
+      // Extract chat/group info
       if (chat) {
         groupUsername = chat.username || null;
-
         if (groupUsername) {
-          // Public group: direct link
           groupLink = `https://t.me/${groupUsername}`;
           messageLink = message.id ? `https://t.me/${groupUsername}/${message.id}` : null;
         } else {
-          // Private group: use c/ format for message link
           const channelId = String(chat.id).replace('-100', '').replace('-', '');
           messageLink = message.id ? `https://t.me/c/${channelId}/${message.id}` : null;
           groupLink = `المجموعة خاصة (ID: ${groupId})`;
         }
       }
     }
+
+    // Build links
+    const profileLink = senderUsername
+      ? `https://t.me/${senderUsername}`
+      : (senderId !== 'unknown' ? `tg://user?id=${senderId}` : null);
 
     // Update monitored group with username/link if we found one
     if (groupUsername && monitoredGroup) {
@@ -414,7 +413,7 @@ async function handleNewMessage(event, account, client) {
     logger.info(`Classification result for msg in "${groupName}" (chat ${groupId}): isRequest=${isRequest}, confidence=${confidenceScore}, service=${serviceType}`);
 
     // Only save if it's a request (not spam/ads) with sufficient confidence
-    if (!isRequest || confidenceScore < 0.65) {
+    if (!isRequest || confidenceScore < 0.50) {
       if (isAdvertiser) {
         logger.info(`Msg in "${groupName}" skipped: classified as advertiser.`);
       } else {
