@@ -22,7 +22,7 @@ const messageQueue = new MessageQueue(handleNewMessage, 8);
 // receive it simultaneously (race condition that DB dedup cannot catch).
 /** @type {Map<string, number>} dedupKey -> timestamp */
 const recentMessageCache = new Map();
-const DEDUP_CACHE_TTL_MS = 30 * 1000; // 30 seconds
+const DEDUP_CACHE_TTL_MS = 120 * 1000; // 120 seconds — covers multi-account race window
 const DEDUP_CACHE_CLEANUP_INTERVAL = 60 * 1000; // clean every 60 seconds
 
 // Periodically clean expired entries from the dedup cache
@@ -321,10 +321,10 @@ async function handleNewMessage(event, account, client) {
     if (!messageText || messageText.length < 5) return;
 
     // ─── Fast In-Memory Dedup ─────────────────────────────────────────────────
-    // Build a key from senderId + messageText to catch the same message arriving
-    // from multiple listener accounts within seconds of each other.
-    const parsedSenderId = parsedForward ? parsedForward.senderId : (message.fromId ? String(message.fromId.userId || message.fromId.channelId || '') : '');
-    const dedupKey = `${parsedSenderId}:${groupId}:${messageText.substring(0, 100)}`;
+    // Use ONLY normalized messageText as key (senderId is unreliable for forwards).
+    // This catches the same message arriving from multiple listener accounts.
+    const normalizedText = messageText.replace(/\s+/g, ' ').trim().substring(0, 150);
+    const dedupKey = `${normalizedText}`;
     if (recentMessageCache.has(dedupKey)) {
       logger.debug(`Fast-dedup: skipping already-processed message in "${groupName}" from account ${account.phone}`);
       return;
@@ -468,25 +468,31 @@ async function handleNewMessage(event, account, client) {
       return;
     }
 
-    // Deduplication: avoid duplicate requests from the same sender within the last 12 hours
-    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
-    const duplicateRequest = await db.request.findFirst({
+    // ─── DB Deduplication (two-tier) ──────────────────────────────────────────
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+    // Tier 1: Exact text match within 2 hours (catches most duplicates)
+    const exactDupe = await db.request.findFirst({
       where: {
-        AND: [
-          { messageText },
-          { capturedAt: { gte: twelveHoursAgo } },
-          {
-            OR: [
-              { senderId },
-              { senderPhone },
-              { senderUsername },
-            ],
-          },
-        ],
+        messageText,
+        capturedAt: { gte: twoHoursAgo },
       },
     });
-    if (duplicateRequest) {
-      logger.info(`Skipping duplicate request from same sender in "${groupName}" captured within 12h.`);
+    if (exactDupe) {
+      logger.info(`Skipping exact duplicate in "${groupName}" (already captured ${exactDupe.id}).`);
+      return;
+    }
+
+    // Tier 2: Fuzzy match — same first 100 chars of text within 2 hours
+    const textPrefix = messageText.substring(0, 100);
+    const fuzzyDupe = await db.request.findFirst({
+      where: {
+        messageText: { startsWith: textPrefix },
+        capturedAt: { gte: twoHoursAgo },
+      },
+    });
+    if (fuzzyDupe) {
+      logger.info(`Skipping fuzzy-duplicate in "${groupName}" (matches ${fuzzyDupe.id}).`);
       return;
     }
 
