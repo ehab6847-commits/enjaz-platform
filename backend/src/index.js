@@ -95,7 +95,7 @@ app.get('/api/health', async (req, res) => {
   const fs = require('fs');
   const path = require('path');
   const db = require('./config/database');
-  const { activeClients } = require('./services/telegram/listener');
+  const { activeClients, messageQueue } = require('./services/telegram/listener');
 
   const health = {
     status: 'ok',
@@ -134,6 +134,7 @@ app.get('/api/health', async (req, res) => {
       monitoredGroupsCount: await db.monitoredGroup.count(),
       activeGroupsCount: await db.monitoredGroup.count({ where: { isActive: true } }),
       requestsCount: await db.request.count(),
+      queueStats: messageQueue ? messageQueue.getStats() : null,
     };
   } catch (err) {
     health.telegramError = err.message;

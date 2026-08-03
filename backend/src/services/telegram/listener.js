@@ -943,7 +943,6 @@ const checkListenersHealth = async () => {
 
   return report;
 };
-
 module.exports = {
   startAllListeners,
   addNewListener,
@@ -951,4 +950,5 @@ module.exports = {
   checkListenersHealth,
   deduplicateGroups,
   activeClients,
+  messageQueue,
 };
