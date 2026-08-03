@@ -6,15 +6,20 @@ class MessageQueue {
   /**
    * Creates a queue processor.
    * @param {Function} processor - The async function to process each message
-   * @param {number} concurrency - Max concurrent processing tasks
+   * @param {number} defaultConcurrency - Default max concurrent processing tasks
    */
-  constructor(processor, concurrency = 2) {
+  constructor(processor, defaultConcurrency = 10) {
     this.queue = [];
     this.processor = processor;
-    this.concurrency = concurrency;
+    
+    // Read from environment variable or fallback to default
+    const envConcurrency = process.env.QUEUE_CONCURRENCY ? parseInt(process.env.QUEUE_CONCURRENCY, 10) : NaN;
+    this.concurrency = isNaN(envConcurrency) ? defaultConcurrency : envConcurrency;
+    
     this.activeCount = 0;
     this.totalProcessed = 0;
     this.totalFailed = 0;
+    this.maxQueueSize = 1000; // Prevent unbounded memory growth
   }
 
   /**
@@ -24,7 +29,15 @@ class MessageQueue {
    * @param {Object} client - The active TelegramClient
    */
   enqueue(event, account, client) {
-    this.queue.push({ event, account, client });
+    if (this.queue.length >= this.maxQueueSize) {
+      logger.warn(`Queue size limit reached (${this.maxQueueSize}). Dropping message to prevent memory overflow.`, {
+        account: account.phone,
+        messageId: event.message?.id
+      });
+      return;
+    }
+    
+    this.queue.push({ event, account, client, retries: 0 });
     logger.debug(`Queue size: ${this.queue.length} (active: ${this.activeCount})`);
     this.processNext();
   }
@@ -38,18 +51,32 @@ class MessageQueue {
     }
 
     this.activeCount++;
-    const { event, account, client } = this.queue.shift();
+    const task = this.queue.shift();
+    const { event, account, client, retries } = task;
 
     try {
       await this.processor(event, account, client);
       this.totalProcessed++;
     } catch (err) {
-      this.totalFailed++;
-      logger.error('Queue processing task failed', {
-        error: err.message,
-        stack: err.stack,
-        account: account.phone,
-      });
+      // Simple retry logic (retry once after 1.5 seconds delay)
+      if (retries < 1) {
+        logger.warn(`Task failed, scheduling retry in 1.5s`, {
+          error: err.message,
+          account: account.phone,
+          retries: retries + 1
+        });
+        setTimeout(() => {
+          this.queue.push({ event, account, client, retries: retries + 1 });
+          this.processNext();
+        }, 1500);
+      } else {
+        this.totalFailed++;
+        logger.error('Queue processing task failed permanently after retry', {
+          error: err.message,
+          stack: err.stack,
+          account: account.phone,
+        });
+      }
     } finally {
       this.activeCount--;
       // Schedule next item

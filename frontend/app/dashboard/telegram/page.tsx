@@ -78,6 +78,17 @@ export default function TelegramAccountsPage() {
     }
   };
 
+  const toggleGroupStatus = async (groupDbId: string) => {
+    try {
+      await api.put(`/telegram/groups/${groupDbId}/toggle`);
+      if (selectedAccount) {
+        fetchGroups(selectedAccount);
+      }
+    } catch (error) {
+      console.error('Error toggling group status:', error);
+    }
+  };
+
   const handleCloseModal = () => {
     setShowAddModal(false);
     setNewPhone('');
@@ -255,13 +266,17 @@ export default function TelegramAccountsPage() {
                       <div key={group.id} className="bg-[#0F172A] rounded-xl p-4 border border-white/5">
                         <div className="flex items-start justify-between mb-2">
                           <h4 className="text-white font-medium line-clamp-1">{group.groupName || 'مجموعة بدون اسم'}</h4>
-                          <span className={`px-2 py-0.5 rounded text-xs border ${
-                            group.isActive 
-                              ? 'bg-green-500/10 text-green-400 border-green-500/20' 
-                              : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
-                          }`}>
+                          <button
+                            onClick={() => toggleGroupStatus(group.id)}
+                            title="اضغط للتفعيل أو التعطيل يدوياً"
+                            className={`px-2 py-0.5 rounded text-xs border transition-all hover:scale-105 active:scale-95 cursor-pointer ${
+                              group.isActive 
+                                ? 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20' 
+                                : 'bg-slate-500/10 text-slate-400 border-slate-500/20 hover:bg-slate-500/20'
+                            }`}
+                          >
                             {group.isActive ? 'مفعل' : 'معطل'}
-                          </span>
+                          </button>
                         </div>
                         <p className="text-slate-500 text-xs font-mono mb-3" dir="ltr">{group.groupId}</p>
                         <div className="flex items-center justify-between">

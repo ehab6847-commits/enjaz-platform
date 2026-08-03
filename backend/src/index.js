@@ -1,4 +1,29 @@
 require('dotenv').config();
+
+// ─── Global DNS Fallback (Bypasses broken system DNS) ──────────────────────────
+const dns = require('dns');
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+  const originalLookup = dns.lookup;
+  dns.lookup = function(hostname, options, callback) {
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      return originalLookup(hostname, options, callback);
+    }
+    dns.resolve4(hostname, (err, addresses) => {
+      if (err || !addresses || addresses.length === 0) {
+        return originalLookup(hostname, options, callback);
+      }
+      callback(null, addresses[0], 4);
+    });
+  };
+} catch (dnsErr) {
+  console.warn('Failed to initialize global DNS fallback:', dnsErr.message);
+}
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -287,13 +312,34 @@ httpServer.listen(PORT, async () => {
 });
 
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down gracefully...');
-  httpServer.close(() => {
+const gracefulShutdown = async (signal) => {
+  logger.info(`${signal} received, shutting down gracefully...`);
+  
+  httpServer.close(async () => {
     logger.info('HTTP server closed');
+    
+    // Disconnect active GramJS clients
+    const { activeClients } = require('./services/telegram/listener');
+    if (activeClients && activeClients.size > 0) {
+      logger.info(`Disconnecting ${activeClients.size} active Telegram clients...`);
+      const disconnectPromises = [];
+      for (const [id, client] of activeClients.entries()) {
+        disconnectPromises.push(
+          client.disconnect()
+            .then(() => logger.info(`Disconnected Telegram client for account ID ${id}`))
+            .catch((err) => logger.error(`Error disconnecting client ${id}:`, { error: err.message }))
+        );
+      }
+      await Promise.allSettled(disconnectPromises);
+    }
+    
+    logger.info('Graceful shutdown completed');
     process.exit(0);
   });
-});
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);

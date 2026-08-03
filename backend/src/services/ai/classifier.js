@@ -22,8 +22,9 @@ const SERVICE_TYPES = [
 const shouldSkipMessage = (text) => {
   const trimmed = text.trim();
 
-  // Too short to be a meaningful request
-  if (trimmed.length < 10) return true;
+  // Read min length from env, defaulting to 5 characters (allow short requests like 'ابي واجب')
+  const minLength = process.env.MESSAGE_MIN_LENGTH ? parseInt(process.env.MESSAGE_MIN_LENGTH, 10) : 5;
+  if (trimmed.length < minLength) return true;
 
   // Pure greetings / reactions
   const greetingPatterns = /^(السلام عليكم|وعليكم السلام|مرحبا|هلا|اهلا|حياكم|صباح الخير|مساء الخير|شكرا|الله يعطيك العافيه|جزاك الله خير|الحمد لله|ان شاء الله|ماشاء الله|تبارك الله|سبحان الله|الله اكبر|هههه|لا اله الا الله|استغفر الله|اللهم صل|آمين|امين|الله يوفقكم|موفق|بالتوفيق|تمام|اوكي|ok|okay|hi|hello|good morning|thanks)[\s!.؟]*$/i;
@@ -33,9 +34,9 @@ const shouldSkipMessage = (text) => {
   const emojiOnly = /^[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2702}-\u{27B0}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{200D}\u{20E3}\s❤👍🤣😂]+$/u;
   if (emojiOnly.test(trimmed)) return true;
 
-  // Very short single-word or two-word messages (unlikely to be requests)
+  // Accept short 2-word messages since they can be requests like "ابي واجب"
   const wordCount = trimmed.split(/\s+/).length;
-  if (wordCount <= 2 && trimmed.length < 20) return true;
+  if (wordCount < 2) return true;
 
   return false;
 };
@@ -326,8 +327,8 @@ const findMatchingKeywords = (text, keywords) => {
         matched.push(kw);
       } else if (lowerText.includes(lowerKw)) {
         // Fallback: still accept if it appears as a standalone substring
-        // but only if the keyword is longer than 3 chars (avoid false matches)
-        if (lowerKw.length > 3) {
+        // Relax length check to >= 2 to allow short Arabic words like 'حل', 'بحث', 'ابي', 'طب'
+        if (lowerKw.length >= 2) {
           matched.push(kw);
         }
       }
@@ -557,13 +558,15 @@ const keywordFallback = (messageText) => {
     advertiserScore += 3.0;
   }
 
-  const isAdvertiser = advertiserScore >= 3.0;
-
   // ─── Request Intent Analysis ────────────────────────────────────────────────
   const matchedStrongIntent = findMatchingKeywords(trimmedText, STRONG_INTENT_KEYWORDS);
   const matchedMediumIntent = findMatchingKeywords(trimmedText, MEDIUM_INTENT_KEYWORDS);
   const matchedWeakIntent = findMatchingKeywords(trimmedText, WEAK_INTENT_KEYWORDS);
   const matchedAcademicKws = findMatchingKeywords(trimmedText, ACADEMIC_KEYWORDS);
+
+  // Require higher advertiser score to skip if there is strong/medium request intent
+  const advertiserThreshold = matchedStrongIntent.length > 0 ? 7.0 : (matchedMediumIntent.length > 0 ? 5.0 : 3.0);
+  const isAdvertiser = advertiserScore >= advertiserThreshold;
 
   // Starts with a request noun pattern
   const startsWithRequestNoun = /^(واجب|تكليف|بحث|مشروع|بروجكت|تقرير|سيرة|سيره|ترجمة|ترجمه|تلخيص|عذر|سكليف|سكاليف|سيكليف|لاب|كويز|رسم|سلايدات|تفريغ|تصميم|حل|مطلوب|محتاج|احتاج|أحتاج)\s+/i.test(trimmedText);
@@ -645,13 +648,47 @@ const keywordFallback = (messageText) => {
 //  TIER 3: OPENAI — For ambiguous messages
 // ═══════════════════════════════════════════════════════════════════════════════
 
-let openaiClient = null;
+let aiClient = null;
+let aiModel = 'gpt-4o-mini';
 
-const getOpenAIClient = () => {
-  if (!openaiClient && process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'sk-placeholder') {
-    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const getAIClient = () => {
+  if (aiClient) return { client: aiClient, model: aiModel };
+
+  const provider = (process.env.AI_PROVIDER || 'hybrid').toLowerCase();
+
+  // 1. Gemini Configuration (check env first, standard OpenAI SDK compatibility)
+  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'placeholder' && process.env.GEMINI_API_KEY !== '' &&
+      (provider === 'gemini' || provider === 'hybrid' || !process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-placeholder')) {
+    logger.info('Initializing Gemini AI client...');
+    aiClient = new OpenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
+    });
+    aiModel = process.env.AI_MODEL || 'gemini-1.5-flash';
+    return { client: aiClient, model: aiModel };
   }
-  return openaiClient;
+
+  // 2. DeepSeek Configuration (OpenAI SDK compatible)
+  if (process.env.DEEPSEEK_API_KEY && process.env.DEEPSEEK_API_KEY !== 'placeholder' && process.env.DEEPSEEK_API_KEY !== '' &&
+      (provider === 'deepseek' || provider === 'hybrid')) {
+    logger.info('Initializing DeepSeek AI client...');
+    aiClient = new OpenAI({
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      baseURL: "https://api.deepseek.com/v1"
+    });
+    aiModel = process.env.AI_MODEL || 'deepseek-chat';
+    return { client: aiClient, model: aiModel };
+  }
+
+  // 3. OpenAI Fallback
+  if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'sk-placeholder' && process.env.OPENAI_API_KEY !== '') {
+    logger.info('Initializing OpenAI client...');
+    aiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    aiModel = process.env.AI_MODEL || 'gpt-4o-mini';
+    return { client: aiClient, model: aiModel };
+  }
+
+  return { client: null, model: null };
 };
 
 const SYSTEM_PROMPT = `أنت محلل رسائل ذكي متخصص في اكتشاف الطلبات التعليمية والأكاديمية في مجموعات تيليجرام.
@@ -766,7 +803,8 @@ const classifyMessage = async (messageText, context = {}) => {
   }
 
   // If clearly a request with high confidence, accept immediately
-  if (kResult.isRequest && kResult.confidenceScore >= 0.55) {
+  const confidenceThreshold = process.env.AI_CONFIDENCE_THRESHOLD ? parseFloat(process.env.AI_CONFIDENCE_THRESHOLD) : 0.55;
+  if (kResult.isRequest && kResult.confidenceScore >= confidenceThreshold) {
     kResult.classifiedBy = 'keyword_fastpass';
     logger.debug('Message classified via keyword fast-pass', {
       serviceType: kResult.serviceType,
@@ -776,10 +814,10 @@ const classifyMessage = async (messageText, context = {}) => {
     return kResult;
   }
 
-  // TIER 3: OpenAI for ambiguous cases
-  const client = getOpenAIClient();
+  // TIER 3: AI model for ambiguous cases (Gemini, DeepSeek, or OpenAI)
+  const { client, model } = getAIClient();
 
-  // If no OpenAI client, return keyword result as-is
+  // If no AI client initialized, return keyword result as-is
   if (!client) {
     if (kResult.isRequest) {
       kResult.classifiedBy = 'keyword_fastpass';
@@ -787,60 +825,77 @@ const classifyMessage = async (messageText, context = {}) => {
     return kResult;
   }
 
-  // Use OpenAI for ambiguous messages:
-  // - Messages with some intent but low confidence
-  // - Messages with no clear classification
-  try {
-    const userContent = context.groupName
-      ? `المجموعة: ${context.groupName}\nالمرسل: ${context.senderName || 'مجهول'}\n\nالرسالة:\n${messageText}`
-      : messageText;
+  // Use AI for ambiguous messages
+  let attempts = 0;
+  const maxAttempts = 2;
+  while (attempts < maxAttempts) {
+    try {
+      attempts++;
+      const userContent = context.groupName
+        ? `المجموعة: ${context.groupName}\nالمرسل: ${context.senderName || 'مجهول'}\n\nالرسالة:\n${messageText}`
+        : messageText;
 
-    const response = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userContent },
-      ],
-      temperature: 0.05,
-      max_tokens: 300,
-      response_format: { type: 'json_object' },
-    });
+      const response = await client.chat.completions.create({
+        model: model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userContent },
+        ],
+        temperature: 0.05,
+        max_tokens: 300,
+        response_format: { type: 'json_object' },
+      }, {
+        timeout: 15000 // 15 seconds timeout
+      });
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) throw new Error('Empty response from OpenAI');
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error('Empty response from AI model');
 
-    const parsed = JSON.parse(content);
+      const parsed = JSON.parse(content);
 
-    const result = {
-      isRequest: Boolean(parsed.isRequest),
-      isAdvertiser: Boolean(parsed.isAdvertiser),
-      serviceType: parsed.serviceType && SERVICE_TYPES.includes(parsed.serviceType)
-        ? parsed.serviceType
-        : (parsed.isRequest ? detectServiceType(messageText) : null),
-      confidenceScore: Math.min(Math.max(Number(parsed.confidenceScore) || 0, 0), 1),
-      keywords: Array.isArray(parsed.keywords) ? parsed.keywords.slice(0, 8) : [],
-      priority: ['URGENT', 'NORMAL', 'LOW'].includes(parsed.priority) ? parsed.priority : 'NORMAL',
-      reasoning: parsed.reasoning || '',
-      classifiedBy: 'openai_gpt4o_mini',
-    };
+      const result = {
+        isRequest: Boolean(parsed.isRequest),
+        isAdvertiser: Boolean(parsed.isAdvertiser),
+        serviceType: parsed.serviceType && SERVICE_TYPES.includes(parsed.serviceType)
+          ? parsed.serviceType
+          : (parsed.isRequest ? detectServiceType(messageText) : null),
+        confidenceScore: Math.min(Math.max(Number(parsed.confidenceScore) || 0, 0), 1),
+        keywords: Array.isArray(parsed.keywords) ? parsed.keywords.slice(0, 8) : [],
+        priority: ['URGENT', 'NORMAL', 'LOW'].includes(parsed.priority) ? parsed.priority : 'NORMAL',
+        reasoning: parsed.reasoning || '',
+        classifiedBy: `ai_${model}`,
+      };
 
-    logger.debug('Message classified by OpenAI', {
-      isRequest: result.isRequest,
-      isAdvertiser: result.isAdvertiser,
-      serviceType: result.serviceType,
-      confidence: result.confidenceScore,
-      reasoning: result.reasoning,
-    });
+      logger.debug('Message classified by AI', {
+        model,
+        isRequest: result.isRequest,
+        isAdvertiser: result.isAdvertiser,
+        serviceType: result.serviceType,
+        confidence: result.confidenceScore,
+        reasoning: result.reasoning,
+      });
 
-    return result;
-  } catch (err) {
-    logger.error('OpenAI classification failed, using keyword result', {
-      error: err.message,
-    });
-    if (kResult.isRequest) {
-      kResult.classifiedBy = 'keyword_fastpass';
+      return result;
+    } catch (err) {
+      logger.warn(`AI classification attempt ${attempts} failed: ${err.message}`);
+      if (attempts >= maxAttempts) {
+        logger.error('AI classification failed completely, using relaxed keyword fallback', {
+          error: err.message,
+        });
+        
+        // Relaxed fallback: if keywords indicated even a medium request intent, accept it!
+        // This prevents ignoring valid requests during AI downtime.
+        if (kResult.isRequest || kResult._debug?.intentScore >= 15) {
+          kResult.isRequest = true;
+          if (kResult.confidenceScore < 0.5) kResult.confidenceScore = 0.5;
+          kResult.classifiedBy = 'ai_fallback_relaxed';
+          return kResult;
+        }
+        return kResult;
+      }
+      // Small sleep before retry
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    return kResult;
   }
 };
 

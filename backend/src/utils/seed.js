@@ -8,9 +8,9 @@ const prisma = new PrismaClient();
 
 // ─── Admin Credentials ─────────────────────────────────────────────────────────
 const ADMIN = {
-  username: process.env.ADMIN_USERNAME || 'EhabSH',
-  email: process.env.ADMIN_EMAIL || 'ehab6847@gmail.com',
-  password: process.env.ADMIN_PASSWORD || 'ehab20633',
+  username: 'EhabSH',
+  email: 'ehab6847@gmail.com',
+  password: 'ehab20633',
 };
 
 /**

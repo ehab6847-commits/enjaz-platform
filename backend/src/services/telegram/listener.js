@@ -22,7 +22,7 @@ const messageQueue = new MessageQueue(handleNewMessage, 8);
 // receive it simultaneously (race condition that DB dedup cannot catch).
 /** @type {Map<string, number>} dedupKey -> timestamp */
 const recentMessageCache = new Map();
-const DEDUP_CACHE_TTL_MS = 120 * 1000; // 120 seconds — covers multi-account race window
+const DEDUP_CACHE_TTL_MS = 30 * 1000; // 30 seconds
 const DEDUP_CACHE_CLEANUP_INTERVAL = 60 * 1000; // clean every 60 seconds
 
 // Periodically clean expired entries from the dedup cache
@@ -34,6 +34,98 @@ setInterval(() => {
     }
   }
 }, DEDUP_CACHE_CLEANUP_INTERVAL);
+
+// ─── Active Monitored Groups Memory Cache ──────────────────────────────────────
+const monitoredGroupsCache = new Map();
+
+const refreshMonitoredGroupsCache = async () => {
+  try {
+    const activeGroups = await db.monitoredGroup.findMany({
+      where: { isActive: true }
+    });
+    monitoredGroupsCache.clear();
+    for (const g of activeGroups) {
+      monitoredGroupsCache.set(`${g.accountId}_${g.groupId}`, g);
+    }
+    logger.debug(`Loaded ${monitoredGroupsCache.size} active monitored groups into memory cache`);
+  } catch (err) {
+    logger.error('Failed to load monitored groups cache:', err);
+  }
+};
+
+// Periodically refresh the monitored groups cache (every 2 minutes)
+setInterval(refreshMonitoredGroupsCache, 2 * 60 * 1000);
+
+// ─── Deduplicate Monitored Groups ──────────────────────────────────────────────
+/**
+ * Deduplicates monitored groups across multiple accounts.
+ * Prioritizes keeping the group active on the official account (e.g. +967772612086).
+ * If not on the official account, keeps it active on only one account and deactivates it on others.
+ */
+const deduplicateGroups = async () => {
+  try {
+    const officialPhone = process.env.OFFICIAL_PHONE || '+967772612086';
+    const cleanPhone = (p) => p ? String(p).replace(/[^0-9]/g, '') : '';
+    const cleanOfficial = cleanPhone(officialPhone);
+    
+    logger.info(`Monitored Groups Deduplication (Official: ${officialPhone})...`);
+    
+    const accounts = await db.telegramAccount.findMany();
+    const officialAccount = accounts.find(acc => cleanPhone(acc.phone) === cleanOfficial);
+    
+    if (officialAccount) {
+      logger.info(`Identified official account: ${officialAccount.phone}`);
+    } else {
+      logger.warn(`Could not find account matching official phone ${officialPhone}`);
+    }
+
+    const allGroups = await db.monitoredGroup.findMany();
+    const groupsByTelegramId = {};
+    for (const g of allGroups) {
+      if (!groupsByTelegramId[g.groupId]) {
+        groupsByTelegramId[g.groupId] = [];
+      }
+      groupsByTelegramId[g.groupId].push(g);
+    }
+    
+    let deactivatedCount = 0;
+    let activatedCount = 0;
+    
+    for (const tgGroupId in groupsByTelegramId) {
+      const listings = groupsByTelegramId[tgGroupId];
+      if (listings.length <= 1) continue;
+      
+      let activeListing = null;
+      if (officialAccount) {
+        activeListing = listings.find(l => l.accountId === officialAccount.id);
+      }
+      if (!activeListing) {
+        activeListing = listings.find(l => l.isActive) || listings[0];
+      }
+      
+      for (const listing of listings) {
+        const shouldBeActive = (listing.id === activeListing.id);
+        if (listing.isActive !== shouldBeActive) {
+          await db.monitoredGroup.update({
+            where: { id: listing.id },
+            data: { isActive: shouldBeActive }
+          });
+          if (shouldBeActive) activatedCount++;
+          else deactivatedCount++;
+        }
+      }
+    }
+    
+    if (deactivatedCount > 0 || activatedCount > 0) {
+      logger.info(`Monitored groups deduplicated: Activated ${activatedCount}, Deactivated ${deactivatedCount}`);
+      await refreshMonitoredGroupsCache();
+    } else {
+      logger.debug(`Monitored groups deduplication: No duplicates needed updating`);
+    }
+  } catch (err) {
+    logger.error('Error during monitored groups deduplication:', err);
+  }
+};
 
 // ─── Sleep Helper ──────────────────────────────────────────────────────────────
 /**
@@ -230,12 +322,20 @@ const parseForwardedFormat = (text) => {
     const linkIndex = normalizedText.replace(/رابط\s+الرسال[ةه]\s*:/i, 'رابط الرساله :').indexOf('رابط الرساله :');
 
     if (textIndex !== -1) {
-      if (linkIndex !== -1 && linkIndex > textIndex) {
-        messageText = normalizedText.substring(textIndex + 'نص الرساله :'.length, linkIndex).trim();
-        messageLink = normalizedText.substring(linkIndex + 'رابط الرساله :'.length).trim();
-      } else {
-        messageText = normalizedText.substring(textIndex + 'نص الرساله :'.length).trim();
+      let endOfText = normalizedText.length;
+      
+      // Strip metadata added by bot forwarding (prevent infinite loop)
+      const groupIndex = normalizedText.indexOf('المجموعة :');
+      if (groupIndex !== -1 && groupIndex > textIndex) {
+        endOfText = Math.min(endOfText, groupIndex);
       }
+      
+      if (linkIndex !== -1 && linkIndex > textIndex) {
+        endOfText = Math.min(endOfText, linkIndex);
+        messageLink = normalizedText.substring(linkIndex + 'رابط الرساله :'.length).trim();
+      }
+      
+      messageText = normalizedText.substring(textIndex + 'نص الرساله :'.length, endOfText).trim();
     }
 
     // Clean up HTML tags from senderName if any
@@ -300,10 +400,9 @@ async function handleNewMessage(event, account, client) {
       }
     }
 
-    // Check if this group is in our monitored list in DB first (no Telegram API call)
-    const monitoredGroup = await db.monitoredGroup.findFirst({
-      where: { groupId, accountId: account.id, isActive: true },
-    });
+    // Check if this group is in our monitored list in memory cache first (blazing fast)
+    const cacheKey = `${account.id}_${groupId}`;
+    const monitoredGroup = monitoredGroupsCache.get(cacheKey);
 
     if (!monitoredGroup) {
       // Quietly skip unmonitored groups to avoid log flooding
@@ -321,10 +420,10 @@ async function handleNewMessage(event, account, client) {
     if (!messageText || messageText.length < 5) return;
 
     // ─── Fast In-Memory Dedup ─────────────────────────────────────────────────
-    // Use ONLY normalized messageText as key (senderId is unreliable for forwards).
-    // This catches the same message arriving from multiple listener accounts.
-    const normalizedText = messageText.replace(/\s+/g, ' ').trim().substring(0, 150);
-    const dedupKey = `${normalizedText}`;
+    // Build a key from groupId + messageId if available (100% accurate for same group duplicates)
+    const parsedSenderId = parsedForward ? parsedForward.senderId : (message.fromId ? String(message.fromId.userId || message.fromId.channelId || '') : '');
+    const dedupKey = message.id ? `${groupId}:${message.id}` : `${parsedSenderId}:${groupId}:${messageText.substring(0, 100)}`;
+    
     if (recentMessageCache.has(dedupKey)) {
       logger.debug(`Fast-dedup: skipping already-processed message in "${groupName}" from account ${account.phone}`);
       return;
@@ -468,31 +567,46 @@ async function handleNewMessage(event, account, client) {
       return;
     }
 
-    // ─── DB Deduplication (two-tier) ──────────────────────────────────────────
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-
-    // Tier 1: Exact text match within 2 hours (catches most duplicates)
-    const exactDupe = await db.request.findFirst({
-      where: {
-        messageText,
-        capturedAt: { gte: twoHoursAgo },
-      },
-    });
-    if (exactDupe) {
-      logger.info(`Skipping exact duplicate in "${groupName}" (already captured ${exactDupe.id}).`);
-      return;
+    // Deduplication: avoid duplicate requests from the same sender within the last 12 hours
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    
+    const senderIdentityConditions = [];
+    if (senderId && senderId !== 'unknown') {
+      senderIdentityConditions.push({ senderId });
+    }
+    if (senderPhone && senderPhone !== '') {
+      senderIdentityConditions.push({ senderPhone });
+    }
+    if (senderUsername && senderUsername !== '') {
+      senderIdentityConditions.push({ senderUsername });
     }
 
-    // Tier 2: Fuzzy match — same first 100 chars of text within 2 hours
-    const textPrefix = messageText.substring(0, 100);
-    const fuzzyDupe = await db.request.findFirst({
-      where: {
-        messageText: { startsWith: textPrefix },
-        capturedAt: { gte: twoHoursAgo },
-      },
-    });
-    if (fuzzyDupe) {
-      logger.info(`Skipping fuzzy-duplicate in "${groupName}" (matches ${fuzzyDupe.id}).`);
+    let duplicateRequest = null;
+    if (senderIdentityConditions.length > 0) {
+      duplicateRequest = await db.request.findFirst({
+        where: {
+          AND: [
+            { messageText },
+            { capturedAt: { gte: twelveHoursAgo } },
+            { OR: senderIdentityConditions },
+          ],
+        },
+      });
+    } else {
+      // Fallback: if no sender identifiers, match by text in the same group
+      duplicateRequest = await db.request.findFirst({
+        where: {
+          AND: [
+            { messageText },
+            { groupId },
+            { capturedAt: { gte: twelveHoursAgo } },
+          ],
+        },
+      });
+    }
+
+    if (duplicateRequest) {
+      logger.info(`Skipping duplicate request from same sender in "${groupName}" captured within 12h.`);
       return;
     }
 
@@ -609,11 +723,14 @@ const createClientForAccount = async (account) => {
 
     logger.info(`✅ Connected Telegram account: ${account.phone}`);
 
-    // Register message handler via queue to throttle concurrency
-    client.addEventHandler(
-      (event) => messageQueue.enqueue(event, account, client),
-      new NewMessage({ incoming: true })
-    );
+    // Register message handler via queue, prevent handler stacking on reconnect
+    if (!client._hasEnjazHandler) {
+      client.addEventHandler(
+        (event) => messageQueue.enqueue(event, account, client),
+        new NewMessage({ incoming: true })
+      );
+      client._hasEnjazHandler = true;
+    }
 
     // Handle disconnects with auto-reconnect
     client.setParseMode('html');
@@ -668,6 +785,8 @@ const createClientForAccount = async (account) => {
         }
         if (addedCount > 0) {
           logger.info(`💾 Automatically registered ${addedCount} new group(s) for ${account.phone}`);
+          // Trigger group deduplication in the background to deactivate duplicates on other accounts
+          deduplicateGroups().catch(() => {});
         } else {
           logger.info(`ℹ️ No new groups to register for ${account.phone}`);
         }
@@ -708,20 +827,26 @@ const startAllListeners = async () => {
 
     logger.info(`Starting listeners for ${accounts.length} Telegram account(s)...`);
 
-    for (const account of accounts) {
+    // 1. Warm up monitored groups cache
+    await refreshMonitoredGroupsCache();
+
+    // 2. Connect accounts in parallel to avoid blocking startup
+    const connectionPromises = accounts.map(async (account) => {
       if (activeClients.has(account.id)) {
         logger.debug(`Listener already running for account ${account.phone}`);
-        continue;
+        return;
       }
 
       const client = await createClientForAccount(account);
       if (client) {
         activeClients.set(account.id, client);
       }
+    });
 
-      // Small delay between account connections to avoid rate limiting
-      await sleep(2);
-    }
+    await Promise.allSettled(connectionPromises);
+
+    // 3. Run group deduplication to deactivate duplicates on secondary accounts
+    await deduplicateGroups();
 
     logger.info(`✅ ${activeClients.size} Telegram listener(s) active`);
   } catch (err) {
@@ -776,12 +901,16 @@ const checkListenersHealth = async () => {
     let isHealthy = false;
     try {
       if (client.connected) {
-        // Ping Telegram with a fast query to check if connection is active and wake it up (keep-alive)
-        await Promise.race([
-          client.getMe(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Ping Timeout')), 4000))
-        ]);
-        isHealthy = true;
+        // Ping Telegram with a fast query (increased timeout to 15s to avoid false stale detections under lag)
+        try {
+          await Promise.race([
+            client.getMe(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Ping Timeout')), 15000))
+          ]);
+          isHealthy = true;
+        } catch (pingErr) {
+          logger.warn(`Ping failed for ${accountId}: ${pingErr.message}`);
+        }
       }
     } catch (pingErr) {
       logger.warn(`Stale Telegram client detected for account ${accountId}: ${pingErr.message}`);
@@ -820,5 +949,6 @@ module.exports = {
   addNewListener,
   removeListener,
   checkListenersHealth,
+  deduplicateGroups,
   activeClients,
 };

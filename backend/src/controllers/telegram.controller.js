@@ -4,7 +4,7 @@ const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 const db = require('../config/database');
 const logger = require('../config/logger');
-const { addNewListener, activeClients } = require('../services/telegram/listener');
+const { addNewListener, deduplicateGroups, activeClients } = require('../services/telegram/listener');
 
 // Map to hold in-memory pending client instances and their phoneCodeHash
 const loginSessions = new Map();
@@ -159,6 +159,9 @@ const addGroup = async (req, res, next) => {
 
     logger.info('Monitored group added', { accountId, groupId, groupName });
 
+    // Trigger instant deduplication to handle duplicates and refresh memory cache
+    deduplicateGroups().catch(() => {});
+
     return res.status(201).json({ success: true, data: group });
   } catch (err) {
     next(err);
@@ -234,6 +237,9 @@ const toggleGroup = async (req, res, next) => {
       data: { isActive: !group.isActive },
     });
 
+    // Trigger instant deduplication to handle duplicates and refresh memory cache
+    deduplicateGroups().catch(() => {});
+
     return res.status(200).json({
       success: true,
       message: `Group is now ${updated.isActive ? 'active' : 'inactive'}.`,
@@ -258,6 +264,9 @@ const deleteGroup = async (req, res, next) => {
     }
 
     await db.monitoredGroup.delete({ where: { id } });
+
+    // Trigger instant deduplication to handle duplicates and refresh memory cache
+    deduplicateGroups().catch(() => {});
 
     return res.status(200).json({ success: true, message: 'Group removed from monitoring.' });
   } catch (err) {

@@ -98,7 +98,9 @@ model Request {
   feedbacks       ClassificationFeedback[]
 
   @@map("requests")
+  @@unique([messageId, groupId])
   @@index([status])
+  @@index([groupId])
   @@index([country])
   @@index([serviceType])
   @@index([capturedAt])

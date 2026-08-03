@@ -16,7 +16,7 @@ dist/
 build/
 
 # Logs
-backend/logs/
+logs/
 *.log
 npm-debug.log*
 
