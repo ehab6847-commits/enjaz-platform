@@ -13,11 +13,17 @@ try {
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
       return originalLookup(hostname, options, callback);
     }
+    const isAll = options && options.all;
     dns.resolve4(hostname, (err, addresses) => {
       if (err || !addresses || addresses.length === 0) {
         return originalLookup(hostname, options, callback);
       }
-      callback(null, addresses[0], 4);
+      if (isAll) {
+        const results = addresses.map(addr => ({ address: addr, family: 4 }));
+        callback(null, results);
+      } else {
+        callback(null, addresses[0], 4);
+      }
     });
   };
 } catch (dnsErr) {
