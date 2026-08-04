@@ -400,9 +400,11 @@ async function handleNewMessage(event, account, client) {
       }
     }
 
-    // Check if this group is in our monitored list in memory cache first (blazing fast)
-    const cacheKey = `${account.id}_${groupId}`;
-    const monitoredGroup = monitoredGroupsCache.get(cacheKey);
+    // Check if this group is in our monitored list in memory cache (with normalized ID fallback)
+    const normGroupId = groupId.replace('-100', '');
+    const monitoredGroup = monitoredGroupsCache.get(`${account.id}_${groupId}`) ||
+                           monitoredGroupsCache.get(`${account.id}_${normGroupId}`) ||
+                           monitoredGroupsCache.get(`${account.id}_-100${normGroupId}`);
 
     if (!monitoredGroup) {
       // Quietly skip unmonitored groups to avoid log flooding
@@ -558,7 +560,7 @@ async function handleNewMessage(event, account, client) {
     logger.info(`Classification result for msg in "${groupName}" (chat ${groupId}): isRequest=${isRequest}, confidence=${confidenceScore}, service=${serviceType}`);
 
     // Only save if it's a request (not spam/ads) with sufficient confidence
-    if (!isRequest || confidenceScore < 0.50) {
+    if (!isRequest || confidenceScore < 0.40) {
       if (isAdvertiser) {
         logger.info(`Msg in "${groupName}" skipped: classified as advertiser.`);
       } else {
