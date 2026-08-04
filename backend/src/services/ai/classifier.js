@@ -590,10 +590,10 @@ const keywordFallback = (messageText) => {
   }
 
   // Determine if it's a request
-  const hasStrongSignal = matchedStrongIntent.length > 0 && matchedAcademicKws.length > 0;
-  const hasMediumSignal = matchedMediumIntent.length > 0 && matchedAcademicKws.length > 0;
-  const hasNounStart = startsWithRequestNoun && matchedAcademicKws.length > 0;
-  const hasWeakSignal = matchedWeakIntent.length > 0 && matchedAcademicKws.length >= 1;
+  const hasStrongSignal = matchedStrongIntent.length > 0;
+  const hasMediumSignal = matchedMediumIntent.length > 0 && (matchedAcademicKws.length > 0 || intentScore >= 15);
+  const hasNounStart = startsWithRequestNoun;
+  const hasWeakSignal = matchedWeakIntent.length > 0 && (matchedAcademicKws.length >= 1 || matchedMediumIntent.length >= 1);
 
   const isRequest = (hasStrongSignal || hasMediumSignal || hasNounStart || hasWeakSignal) && !isAdvertiser;
 
