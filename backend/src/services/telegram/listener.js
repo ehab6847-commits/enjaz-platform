@@ -804,6 +804,15 @@ const createClientForAccount = async (account) => {
       return createClientForAccount(account);
     }
 
+    // If AUTH_KEY_DUPLICATED occurs (e.g. stale connection from server restart), retry once after a 6s delay
+    const isAuthKeyDup = err.message?.includes('AUTH_KEY_DUPLICATED') || err.errorMessage === 'AUTH_KEY_DUPLICATED' || err.code === 406;
+    if (isAuthKeyDup && !account._authKeyRetry) {
+      account._authKeyRetry = true;
+      logger.warn(`AUTH_KEY_DUPLICATED detected for ${account.phone}. Stale session on Telegram server. Waiting 6s before retrying...`);
+      await sleep(6);
+      return createClientForAccount(account);
+    }
+
     logger.error(`Failed to create client for ${account.phone}`, { error: err.message });
     return null;
   }
@@ -830,20 +839,23 @@ const startAllListeners = async () => {
     // 1. Warm up monitored groups cache
     await refreshMonitoredGroupsCache();
 
-    // 2. Connect accounts in parallel to avoid blocking startup
-    const connectionPromises = accounts.map(async (account) => {
+    // 2. Connect accounts sequentially with delays to avoid Telegram rate limits and AUTH_KEY_DUPLICATED
+    for (const account of accounts) {
       if (activeClients.has(account.id)) {
         logger.debug(`Listener already running for account ${account.phone}`);
-        return;
+        continue;
       }
 
-      const client = await createClientForAccount(account);
-      if (client) {
-        activeClients.set(account.id, client);
+      try {
+        const client = await createClientForAccount(account);
+        if (client) {
+          activeClients.set(account.id, client);
+        }
+      } catch (err) {
+        logger.error(`Failed connecting account ${account.phone} during startup:`, { error: err.message });
       }
-    });
-
-    await Promise.allSettled(connectionPromises);
+      await sleep(1.5);
+    }
 
     // 3. Run group deduplication to deactivate duplicates on secondary accounts
     await deduplicateGroups();
@@ -939,6 +951,26 @@ const checkListenersHealth = async () => {
     } else {
       report.healthy++;
     }
+  }
+
+  // Auto-recover any active DB accounts that failed startup and are missing from activeClients
+  try {
+    const activeDbAccounts = await db.telegramAccount.findMany({
+      where: { isActive: true },
+    });
+    for (const acc of activeDbAccounts) {
+      if (!activeClients.has(acc.id)) {
+        logger.info(`SessionCheck: Account ${acc.phone} is active in DB but missing from activeClients. Attempting recovery...`);
+        const client = await createClientForAccount(acc);
+        if (client) {
+          activeClients.set(acc.id, client);
+          report.reconnected++;
+          logger.info(`✅ Recovered listener for account ${acc.phone}`);
+        }
+      }
+    }
+  } catch (dbErr) {
+    logger.error('SessionCheck: Error during missing accounts recovery', { error: dbErr.message });
   }
 
   return report;
