@@ -37,6 +37,7 @@ setInterval(() => {
 
 // ─── Active Monitored Groups Memory Cache ──────────────────────────────────────
 const monitoredGroupsCache = new Map();
+const monitoredGroupsByTgId = new Map();
 
 const refreshMonitoredGroupsCache = async () => {
   try {
@@ -44,8 +45,13 @@ const refreshMonitoredGroupsCache = async () => {
       where: { isActive: true }
     });
     monitoredGroupsCache.clear();
+    monitoredGroupsByTgId.clear();
     for (const g of activeGroups) {
       monitoredGroupsCache.set(`${g.accountId}_${g.groupId}`, g);
+      const normId = String(g.groupId).replace('-100', '');
+      monitoredGroupsByTgId.set(g.groupId, g);
+      monitoredGroupsByTgId.set(normId, g);
+      monitoredGroupsByTgId.set(`-100${normId}`, g);
     }
     logger.debug(`Loaded ${monitoredGroupsCache.size} active monitored groups into memory cache`);
   } catch (err) {
@@ -400,11 +406,14 @@ async function handleNewMessage(event, account, client) {
       }
     }
 
-    // Check if this group is in our monitored list in memory cache (with normalized ID fallback)
+    // Check if this group is in our monitored list in memory cache (with normalized ID fallback + global fallback)
     const normGroupId = groupId.replace('-100', '');
     const monitoredGroup = monitoredGroupsCache.get(`${account.id}_${groupId}`) ||
                            monitoredGroupsCache.get(`${account.id}_${normGroupId}`) ||
-                           monitoredGroupsCache.get(`${account.id}_-100${normGroupId}`);
+                           monitoredGroupsCache.get(`${account.id}_-100${normGroupId}`) ||
+                           monitoredGroupsByTgId.get(groupId) ||
+                           monitoredGroupsByTgId.get(normGroupId) ||
+                           monitoredGroupsByTgId.get(`-100${normGroupId}`);
 
     if (!monitoredGroup) {
       // Quietly skip unmonitored groups to avoid log flooding
