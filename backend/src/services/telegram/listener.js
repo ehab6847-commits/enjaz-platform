@@ -178,65 +178,50 @@ const forwardRequestToChannel = async (request) => {
       return;
     }
 
-    // Build display name: prefer @username, fallback to cleaned name
-    let displayName = 'مجهول';
+    // Build header line matching user's screenshot
+    let headerLine = '';
     if (request.senderUsername) {
-      displayName = `@${request.senderUsername}`;
-    } else if (request.senderName && request.senderName !== 'Unknown') {
-      displayName = request.senderName.replace(/\s*\([^)]+\)/, '').trim();
+      headerLine = `👤 @${request.senderUsername}`;
+    } else if (request.senderName && request.senderName !== 'Unknown' && request.senderName !== 'مجهول') {
+      headerLine = `👤 الاسم: ${escapeHtml(request.senderName)}`;
+    } else {
+      headerLine = `👤 الاسم: Unknown`;
     }
-    
-    // Escape display name to avoid HTML parsing errors
-    displayName = escapeHtml(displayName);
 
-    // Direct message link
-    const directMessageLink = request.senderUsername 
-      ? `https://t.me/${request.senderUsername}` 
-      : (request.senderId && request.senderId !== 'unknown' ? `tg://user?id=${request.senderId}` : null);
-
-    // Make display name a clickable link
-    const nameLink = directMessageLink 
-      ? `<a href="${directMessageLink}">${displayName}</a>`
-      : displayName;
-
-    // Escape message text to avoid HTML parsing errors
     const escapedMessageText = escapeHtml(request.messageText);
+    const messageLinkStr = request.messageLink || 'غير متوفر';
 
-    // Format the message — OLD compact format matching user's screenshot
     const formattedMessageLines = [
-      `👤 <b>${nameLink}</b>`,
-      `المرسل : ID <code>${request.senderId}</code>\n`,
+      headerLine,
+      `المرسل : ID <code>${request.senderId || 'مجهول'}</code>\n`,
       `نص الرساله :`,
       escapedMessageText,
+      `رابط الرساله : ${messageLinkStr}`,
     ];
-
-    // Add group info if available
-    if (request.groupLink) {
-      const escapedGroupName = escapeHtml(request.groupName || 'مجموعة');
-      formattedMessageLines.push(`المجموعة : <a href="${request.groupLink}">${escapedGroupName}</a>`);
-    }
-
-    // Add message link
-    formattedMessageLines.push(`رابط الرساله : ${request.messageLink || 'غير متوفر'}`);
 
     const formattedMessage = formattedMessageLines.join('\n');
 
-    // Build buttons row: [ عرض الرسالة ] and [ رسالة خاصة ] side-by-side
+    // Build buttons row matching user screenshot: [ 📱 رسالة خاصة ] and [ 🔗 عرض الرسالة ]
     const buttons = [];
 
-    // Original message link — always first button if available
-    if (request.messageLink && (request.messageLink.startsWith('http://') || request.messageLink.startsWith('https://') || request.messageLink.startsWith('tg://'))) {
-      buttons.push({
-        text: '🔗 عرض الرسالة',
-        url: request.messageLink
-      });
-    }
-    
-    // Direct message link — use username if available, otherwise use tg://user?id= for users with ID
+    // Direct message link button
     if (request.senderUsername) {
       buttons.push({
         text: '📱 رسالة خاصة',
         url: `https://t.me/${request.senderUsername}`
+      });
+    } else if (request.senderId && request.senderId !== 'unknown' && /^\d+$/.test(request.senderId)) {
+      buttons.push({
+        text: '📱 رسالة خاصة',
+        url: `tg://user?id=${request.senderId}`
+      });
+    }
+
+    // Original message link button
+    if (request.messageLink && (request.messageLink.startsWith('http://') || request.messageLink.startsWith('https://') || request.messageLink.startsWith('tg://'))) {
+      buttons.push({
+        text: '🔗 عرض الرسالة',
+        url: request.messageLink
       });
     }
 
