@@ -703,14 +703,20 @@ const createClientForAccount = async (account) => {
   try {
     const session = new StringSession(account.sessionString);
     const client = new TelegramClient(session, apiId, apiHash, {
-      connectionRetries: 3,
-      retryDelay: 1000,
+      connectionRetries: 10,
+      retryDelay: 2000,
       autoReconnect: true,
       useWSS: false,
+      catchUp: false,
       deviceModel: 'Enjaz Platform Server',
       systemVersion: 'Linux/NodeJS',
       appVersion: '2.0.0',
     });
+
+    // Suppress unhandled GramJS updateLoop timeouts from breaking the client
+    client.onError = (err) => {
+      logger.warn(`GramJS update error for ${account.phone}: ${err ? err.message : err}`);
+    };
 
     await client.connect();
 

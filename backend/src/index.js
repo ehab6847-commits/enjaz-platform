@@ -365,7 +365,12 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', { reason: reason instanceof Error ? reason.message : String(reason) });
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  if (msg.includes('TIMEOUT') || msg.includes('AUTH_KEY_DUPLICATED') || msg.includes('SOCKET_CLOSED')) {
+    logger.warn(`Handled background GramJS network event: ${msg}`);
+    return;
+  }
+  logger.error('Unhandled Rejection at:', { reason: msg });
 });
 
 module.exports = { app, io };
