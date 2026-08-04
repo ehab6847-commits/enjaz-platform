@@ -966,8 +966,28 @@ const checkListenersHealth = async () => {
     logger.error('SessionCheck: Error during missing accounts recovery', { error: dbErr.message });
   }
 
-  return report;
-};
+// ─── MTProto Keep-Alive Ping Interval ─────────────────────────────────────────
+// Sends an MTProto Ping packet every 20 seconds to keep TCP sockets active on cloud hosts (prevents updates.js TIMEOUT errors)
+setInterval(async () => {
+  if (activeClients.size === 0) return;
+  for (const [accountId, client] of activeClients.entries()) {
+    try {
+      if (client && client.connected) {
+        await client.invoke(new Api.Ping({ pingId: BigInt(Math.floor(Math.random() * 1000000)) }));
+      }
+    } catch (pingErr) {
+      logger.warn(`MTProto keep-alive ping failed for account ${accountId}, triggering reconnect: ${pingErr.message}`);
+      try {
+        await client.disconnect().catch(() => {});
+        await client.connect();
+      } catch (reconnectErr) {
+        logger.error(`Failed to reconnect client ${accountId} after ping failure:`, reconnectErr.message);
+        activeClients.delete(accountId);
+      }
+    }
+  }
+}, 20 * 1000);
+
 module.exports = {
   startAllListeners,
   addNewListener,
