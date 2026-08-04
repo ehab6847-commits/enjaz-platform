@@ -276,13 +276,13 @@ const parseForwardedFormat = (text) => {
     // Pattern A: line starting with 👤
     const senderLine = lines.find(l => l.includes('👤'));
     if (senderLine) {
-      senderName = senderLine.replace('👤', '').trim();
+      senderName = senderLine.replace('👤', '').replace('الاسم:', '').replace('الاسم :', '').trim();
     }
     // Pattern B: line containing الاسم
     if (!senderName) {
       const nameLine = lines.find(l => l.startsWith('الاسم :') || l.includes('الاسم:'));
       if (nameLine) {
-        senderName = nameLine.split(':')[1]?.trim();
+        senderName = nameLine.split(':')[1]?.replace('الاسم:', '').replace('الاسم :', '').trim();
       }
     }
 
@@ -494,6 +494,10 @@ async function handleNewMessage(event, account, client) {
 
       // Extract sender info
       if (sender) {
+        if (sender.bot || (sender.username && sender.username.toLowerCase().endsWith('bot'))) {
+          logger.info(`Skipping message in "${groupName}" because sender is a bot: @${sender.username || sender.id}`);
+          return;
+        }
         senderPhone = sender.phone || null;
         const firstName = sender.firstName || '';
         const lastName = sender.lastName || '';
@@ -529,6 +533,12 @@ async function handleNewMessage(event, account, client) {
           groupLink = `المجموعة خاصة (ID: ${groupId})`;
         }
       }
+    }
+
+    // Skip if the message sender username is a bot, or if senderUsername ends with "bot"
+    if (senderUsername && senderUsername.toLowerCase().endsWith('bot')) {
+      logger.info(`Skipping message in "${groupName}" because sender is a bot: @${senderUsername}`);
+      return;
     }
 
     // Build links

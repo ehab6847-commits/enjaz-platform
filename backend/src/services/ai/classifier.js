@@ -34,6 +34,10 @@ const shouldSkipMessage = (text) => {
   const emojiOnly = /^[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2702}-\u{27B0}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{200D}\u{20E3}\s❤👍🤣😂]+$/u;
   if (emojiOnly.test(trimmed)) return true;
 
+  // Skip religious posts, prayers, or standard Islamic channel feed content
+  const religiousPatterns = /(اللهم|اللَّهُمَّ|دعاء|أذكار|اذكار|استغفر|سبحان|الحمد لله|لا إله إلا الله|صل الله|صلى الله|ﷺ|سعيد بن جبير|أستغفر|أذكار الصباح|أذكار المساء|استغفار)/i;
+  if (religiousPatterns.test(trimmed)) return true;
+
   // Accept short 2-word messages since they can be requests like "ابي واجب"
   const wordCount = trimmed.split(/\s+/).length;
   if (wordCount < 2) return true;
