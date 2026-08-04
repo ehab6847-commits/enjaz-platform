@@ -813,7 +813,13 @@ const createClientForAccount = async (account) => {
       return createClientForAccount(account);
     }
 
-    logger.error(`Failed to create client for ${account.phone}`, { error: err.message });
+    // If still failing after retry, deactivate account in DB to avoid blocking the event loop on repeated periodic session checks
+    logger.error(`Failed to create client for ${account.phone}. Deactivating account to prevent server lag.`, { error: err.message });
+    await db.telegramAccount.update({
+      where: { id: account.id },
+      data: { isActive: false },
+    }).catch(() => {});
+
     return null;
   }
 };
@@ -941,8 +947,9 @@ const checkListenersHealth = async () => {
           report.reconnected++;
           logger.info(`✅ Successfully reconnected and re-authorized Telegram client for account ${accountId}`);
         } else {
-          logger.warn(`Account ${accountId} is not authorized after reconnect.`);
+          logger.warn(`Account ${accountId} is not authorized after reconnect. Deactivating in DB.`);
           activeClients.delete(accountId);
+          await db.telegramAccount.update({ where: { id: accountId }, data: { isActive: false } }).catch(() => {});
         }
       } catch (reconnectErr) {
         logger.error(`Failed to reconnect client for account ${accountId}:`, { error: reconnectErr.message });
