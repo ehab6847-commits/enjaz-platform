@@ -281,6 +281,9 @@ httpServer.listen(PORT, async () => {
       await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "processing_errors_createdAt_idx" ON "processing_errors"("createdAt");`).catch(()=>{});
       await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "processing_errors_resolved_idx" ON "processing_errors"("resolved");`).catch(()=>{});
 
+      // 5. Ensure all Telegram accounts with valid session strings are reactivated
+      await db.$executeRawUnsafe(`UPDATE "telegram_accounts" SET "isActive" = true WHERE "sessionString" IS NOT NULL;`).catch(()=>{});
+
       logger.info('✅ Raw SQL database migrations completed');
     } catch (migErr) {
       logger.error('❌ Raw SQL database migrations failed:', { error: migErr.message });
