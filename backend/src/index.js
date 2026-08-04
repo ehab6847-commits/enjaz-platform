@@ -319,6 +319,14 @@ httpServer.listen(PORT, async () => {
   } else {
     logger.warn('📱 Telegram listeners skipped (no database connection)');
   }
+
+  // Self-Ping Interval to keep free Render instance awake 24/7
+  const SELF_PING_URL = process.env.BACKEND_URL || 'https://enjaz-backend-iope.onrender.com/api/health';
+  setInterval(() => {
+    fetch(SELF_PING_URL)
+      .then(res => logger.debug(`Self-ping keep-alive status: ${res.status}`))
+      .catch(err => logger.warn(`Self-ping error: ${err.message}`));
+  }, 8 * 60 * 1000);
 });
 
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────
