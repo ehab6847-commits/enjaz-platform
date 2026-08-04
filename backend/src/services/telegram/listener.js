@@ -966,6 +966,9 @@ const checkListenersHealth = async () => {
     logger.error('SessionCheck: Error during missing accounts recovery', { error: dbErr.message });
   }
 
+  return report;
+};
+
 // ─── MTProto Keep-Alive Ping Interval ─────────────────────────────────────────
 // Sends an MTProto Ping packet every 20 seconds to keep TCP sockets active on cloud hosts (prevents updates.js TIMEOUT errors)
 setInterval(async () => {
