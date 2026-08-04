@@ -706,118 +706,135 @@ const createClientForAccount = async (account) => {
     return null;
   }
 
-  try {
-    const session = new StringSession(account.sessionString);
-    const client = new TelegramClient(session, apiId, apiHash, {
-      connectionRetries: 5,
-      retryDelay: 1000,
-      autoReconnect: true,
-      useWSS: false,
-    });
+  let attempt = 0;
+  const maxAttempts = 4;
 
-    await client.connect();
+  while (attempt < maxAttempts) {
+    attempt++;
+    let client = null;
+    try {
+      const session = new StringSession(account.sessionString);
+      client = new TelegramClient(session, apiId, apiHash, {
+        connectionRetries: 5,
+        retryDelay: 1500,
+        autoReconnect: true,
+        useWSS: false,
+        deviceModel: 'Enjaz Platform Server',
+        systemVersion: 'Linux/NodeJS',
+        appVersion: '2.0.0',
+      });
 
-    if (!(await client.isUserAuthorized())) {
-      logger.warn(`Account ${account.phone} is not authorized. Skipping.`);
-      await client.disconnect();
-      return null;
-    }
+      await client.connect();
 
-    logger.info(`✅ Connected Telegram account: ${account.phone}`);
+      if (!(await client.isUserAuthorized())) {
+        logger.warn(`Account ${account.phone} is not authorized. Skipping.`);
+        await client.disconnect().catch(() => {});
+        return null;
+      }
 
-    // Register message handler via queue, prevent handler stacking on reconnect
-    if (!client._hasEnjazHandler) {
-      client.addEventHandler(
-        (event) => messageQueue.enqueue(event, account, client),
-        new NewMessage({ incoming: true })
-      );
-      client._hasEnjazHandler = true;
-    }
+      logger.info(`✅ Connected Telegram account: ${account.phone}`);
 
-    // Handle disconnects with auto-reconnect
-    client.setParseMode('html');
+      // Register message handler via queue, prevent handler stacking on reconnect
+      if (!client._hasEnjazHandler) {
+        client.addEventHandler(
+          (event) => messageQueue.enqueue(event, account, client),
+          new NewMessage({ incoming: true })
+        );
+        client._hasEnjazHandler = true;
+      }
 
-    // Automatically fetch and register all joined groups in the background
-    (async () => {
-      try {
-        logger.info(`🔍 Scanning joined groups for account: ${account.phone}...`);
-        
-        const setting = await db.systemSetting.findUnique({
-          where: { key: 'FORWARD_CHANNEL_ID' }
-        });
-        const forwardChannelId = setting ? setting.value : process.env.FORWARD_CHANNEL_ID;
+      // Handle disconnects with auto-reconnect
+      client.setParseMode('html');
 
-        const dialogs = await client.getDialogs();
-        let addedCount = 0;
-        for (const dialog of dialogs) {
-          if (dialog.isGroup || dialog.isChannel) {
-            const groupId = String(dialog.id);
-            const groupName = dialog.title || 'Unknown Group';
+      // Automatically fetch and register all joined groups in the background
+      (async () => {
+        try {
+          logger.info(`🔍 Scanning joined groups for account: ${account.phone}...`);
+          
+          const setting = await db.systemSetting.findUnique({
+            where: { key: 'FORWARD_CHANNEL_ID' }
+          });
+          const forwardChannelId = setting ? setting.value : process.env.FORWARD_CHANNEL_ID;
 
-            // Skip if it's the forwarding channel
-            if (forwardChannelId) {
-              const normGroupId = groupId.replace('-100', '');
-              const normForwardId = String(forwardChannelId).replace('-100', '');
-              if (normGroupId === normForwardId) {
-                continue;
+          const dialogs = await client.getDialogs();
+          let addedCount = 0;
+          for (const dialog of dialogs) {
+            if (dialog.isGroup || dialog.isChannel) {
+              const groupId = String(dialog.id);
+              const groupName = dialog.title || 'Unknown Group';
+
+              // Skip if it's the forwarding channel
+              if (forwardChannelId) {
+                const normGroupId = groupId.replace('-100', '');
+                const normForwardId = String(forwardChannelId).replace('-100', '');
+                if (normGroupId === normForwardId) {
+                  continue;
+                }
+              }
+
+              // Check if already exists in DB
+              const existing = await db.monitoredGroup.findFirst({
+                where: { accountId: account.id, groupId: groupId }
+              });
+
+              if (!existing) {
+                const dialogUsername = dialog.entity?.username || null;
+                await db.monitoredGroup.create({
+                  data: {
+                    accountId: account.id,
+                    groupId: groupId,
+                    groupName: groupName,
+                    groupUsername: dialogUsername,
+                    groupLink: dialogUsername ? `https://t.me/${dialogUsername}` : null,
+                    isPublic: !!dialogUsername,
+                    isActive: true
+                  }
+                });
+                addedCount++;
               }
             }
-
-            // Check if already exists in DB
-            const existing = await db.monitoredGroup.findFirst({
-              where: { accountId: account.id, groupId: groupId }
-            });
-
-            if (!existing) {
-              const dialogUsername = dialog.entity?.username || null;
-              await db.monitoredGroup.create({
-                data: {
-                  accountId: account.id,
-                  groupId: groupId,
-                  groupName: groupName,
-                  groupUsername: dialogUsername,
-                  groupLink: dialogUsername ? `https://t.me/${dialogUsername}` : null,
-                  isPublic: !!dialogUsername,
-                  isActive: true
-                }
-              });
-              addedCount++;
-            }
           }
+          if (addedCount > 0) {
+            logger.info(`💾 Automatically registered ${addedCount} new group(s) for ${account.phone}`);
+            // Trigger group deduplication in the background to deactivate duplicates on other accounts
+            deduplicateGroups().catch(() => {});
+          } else {
+            logger.info(`ℹ️ No new groups to register for ${account.phone}`);
+          }
+        } catch (dbErr) {
+          logger.warn(`Failed to auto-register groups for ${account.phone}`, { error: dbErr.message });
         }
-        if (addedCount > 0) {
-          logger.info(`💾 Automatically registered ${addedCount} new group(s) for ${account.phone}`);
-          // Trigger group deduplication in the background to deactivate duplicates on other accounts
-          deduplicateGroups().catch(() => {});
-        } else {
-          logger.info(`ℹ️ No new groups to register for ${account.phone}`);
-        }
-      } catch (dbErr) {
-        logger.warn(`Failed to auto-register groups for ${account.phone}`, { error: dbErr.message });
+      })();
+
+      return client;
+    } catch (err) {
+      if (client) {
+        await client.disconnect().catch(() => {});
       }
-    })();
 
-    return client;
-  } catch (err) {
-    if (err.errorMessage === 'FLOOD_WAIT') {
-      const waitSeconds = err.seconds || 60;
-      logger.warn(`FloodWaitError for ${account.phone}. Waiting ${waitSeconds}s.`);
-      await sleep(waitSeconds);
-      return createClientForAccount(account);
+      if (err.errorMessage === 'FLOOD_WAIT') {
+        const waitSeconds = err.seconds || 60;
+        logger.warn(`FloodWaitError for ${account.phone}. Waiting ${waitSeconds}s.`);
+        await sleep(waitSeconds);
+        continue;
+      }
+
+      const isAuthKeyDup = err.message?.includes('AUTH_KEY_DUPLICATED') || err.errorMessage === 'AUTH_KEY_DUPLICATED' || err.code === 406;
+      if (isAuthKeyDup && attempt < maxAttempts) {
+        const waitTime = attempt * 8; // 8s, 16s, 24s
+        logger.warn(`AUTH_KEY_DUPLICATED for ${account.phone} (attempt ${attempt}/${maxAttempts}). Waiting ${waitTime}s for Telegram socket release...`);
+        await sleep(waitTime);
+        continue;
+      }
+
+      logger.error(`Failed to create client for ${account.phone} (attempt ${attempt}/${maxAttempts}):`, { error: err.message });
+      if (attempt >= maxAttempts) {
+        return null;
+      }
     }
-
-    // If AUTH_KEY_DUPLICATED occurs (e.g. stale connection from server restart), retry once after a 6s delay
-    const isAuthKeyDup = err.message?.includes('AUTH_KEY_DUPLICATED') || err.errorMessage === 'AUTH_KEY_DUPLICATED' || err.code === 406;
-    if (isAuthKeyDup && !account._authKeyRetry) {
-      account._authKeyRetry = true;
-      logger.warn(`AUTH_KEY_DUPLICATED detected for ${account.phone}. Stale session on Telegram server. Waiting 6s before retrying...`);
-      await sleep(6);
-      return createClientForAccount(account);
-    }
-
-    logger.error(`Failed to create client for ${account.phone}`, { error: err.message });
-    return null;
   }
+
+  return null;
 };
 
 // ─── Start All Listeners ───────────────────────────────────────────────────────
@@ -856,7 +873,7 @@ const startAllListeners = async () => {
       } catch (err) {
         logger.error(`Failed connecting account ${account.phone} during startup:`, { error: err.message });
       }
-      await sleep(1.5);
+      await sleep(3.5);
     }
 
     // 3. Run group deduplication to deactivate duplicates on secondary accounts
