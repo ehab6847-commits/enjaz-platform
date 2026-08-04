@@ -178,14 +178,20 @@ const forwardRequestToChannel = async (request) => {
       return;
     }
 
-    // Build header line matching user's screenshot
+    // Build header line matching user's screenshot, making it clickable via HTML link
     let headerLine = '';
     if (request.senderUsername) {
-      headerLine = `👤 @${request.senderUsername}`;
-    } else if (request.senderName && request.senderName !== 'Unknown' && request.senderName !== 'مجهول') {
-      headerLine = `👤 الاسم: ${escapeHtml(request.senderName)}`;
+      headerLine = `👤 <a href="https://t.me/${request.senderUsername}">@${request.senderUsername}</a>`;
+    } else if (request.senderId && request.senderId !== 'unknown' && /^\d+$/.test(request.senderId)) {
+      const nameStr = (request.senderName && request.senderName !== 'Unknown' && request.senderName !== 'مجهول') 
+        ? request.senderName 
+        : 'Unknown';
+      headerLine = `👤 الاسم: <a href="tg://user?id=${request.senderId}">${escapeHtml(nameStr)}</a>`;
     } else {
-      headerLine = `👤 الاسم: Unknown`;
+      const nameStr = (request.senderName && request.senderName !== 'Unknown' && request.senderName !== 'مجهول') 
+        ? request.senderName 
+        : 'Unknown';
+      headerLine = `👤 الاسم: ${escapeHtml(nameStr)}`;
     }
 
     const escapedMessageText = escapeHtml(request.messageText);
@@ -201,19 +207,14 @@ const forwardRequestToChannel = async (request) => {
 
     const formattedMessage = formattedMessageLines.join('\n');
 
-    // Build buttons row matching user screenshot: [ 📱 رسالة خاصة ] and [ 🔗 عرض الرسالة ]
+    // Build buttons row: [ 📱 رسالة خاصة ] (only for username to avoid BUTTON_USER_INVALID) and [ 🔗 عرض الرسالة ]
     const buttons = [];
 
-    // Direct message link button
+    // Direct message link button - ONLY allowed if username exists (http/https link)
     if (request.senderUsername) {
       buttons.push({
         text: '📱 رسالة خاصة',
         url: `https://t.me/${request.senderUsername}`
-      });
-    } else if (request.senderId && request.senderId !== 'unknown' && /^\d+$/.test(request.senderId)) {
-      buttons.push({
-        text: '📱 رسالة خاصة',
-        url: `tg://user?id=${request.senderId}`
       });
     }
 
